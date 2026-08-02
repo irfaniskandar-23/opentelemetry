@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenTelemetry.Api/OpenTelemetry.Api.csproj" />
+  </Folder>
+</Solution>
