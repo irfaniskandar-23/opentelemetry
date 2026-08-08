@@ -11,25 +11,29 @@ builder.Services.AddSingleton<ConcurrentDictionary<Guid, Store>>();
 // ActivityListener all live in System.Diagnostics.
 var listener = new ActivityListener
 {
-    // Subscribe to every ActivitySource in the process, including the ones
-    // ASP.NET Core owns.
-    ShouldListenTo = _ => true,
+    // Subscribe to ASP.NET Core's source only. The whole process is full of
+    // other sources — the TLS stack, sockets, the runtime — and listening to
+    // all of them buries the request spans in noise. Swap in `_ => true` to
+    // see everything the runtime records.
+    ShouldListenTo = source => source.Name.StartsWith("Microsoft.AspNetCore"),
 
     // AllData means "create the activity and populate its tags". Anything less
     // and the activity is either hollow or skipped entirely.
     Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
 
+    // traceId, then parentId, then spanId — the order the tree is read in:
+    // which journey, who called me, who I am.
     ActivityStarted = activity =>
         Console.WriteLine(
             $"[start] {activity.DisplayName} kind={activity.Kind} " +
-            $"traceId={activity.TraceId} spanId={activity.SpanId} parentId={activity.ParentSpanId}"),
+            $"traceId={activity.TraceId} parentId={activity.ParentSpanId} spanId={activity.SpanId}"),
 
     ActivityStopped = activity =>
     {
         var tags = string.Join(", ", activity.TagObjects.Select(tag => $"{tag.Key}={tag.Value}"));
         Console.WriteLine(
             $"[stop ] {activity.DisplayName} kind={activity.Kind} " +
-            $"traceId={activity.TraceId} spanId={activity.SpanId} parentId={activity.ParentSpanId} " +
+            $"traceId={activity.TraceId} parentId={activity.ParentSpanId} spanId={activity.SpanId} " +
             $"duration={activity.Duration.TotalMilliseconds:F1}ms tags=[{tags}]");
     }
 };

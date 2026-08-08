@@ -47,6 +47,89 @@ Two properties on the listener control this:
 This is also the shape of a sampling decision, made per activity before it
 exists. Phase 4 revisits it via the `traceparent` flags byte.
 
+## Four terms, kept straight
+
+A **span** is one unit of work — "handle this HTTP request" is a span. A **trace**
+is the whole journey: every span belonging to one operation, across however many
+services.
+
+| Field | Answers | Regenerated per span? |
+|---|---|---|
+| `traceId` | Which journey does this belong to? | No — shared by the whole trace |
+| `spanId` | Who am I? | **Always**, 8 random bytes |
+| `parentId` | Who caused me? | Inherited from the caller, or all zeros |
+
+The trap is that `parentId` and `spanId` hold the same *kind* of value. They
+differ only in perspective: today's `parentId` was somebody else's `spanId`
+yesterday. Follow the parent links upward and the trace tree reassembles.
+
+## Anatomy of a traceparent header
+
+```
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             ─┬ ────────────────┬─────────────── ───────┬──────── ─┬
+              1                 2                       3          4
+```
+
+| # | W3C field name | Becomes, in the receiver |
+|---|---|---|
+| 1 | `version` | nothing — validated, must be `00` |
+| 2 | `trace-id` | `Activity.TraceId`, copied verbatim |
+| 3 | `parent-id` | `Activity.ParentSpanId` |
+| 4 | `trace-flags` | the sampled bit (`01` = sampled) |
+
+Field 3 is called **`parent-id`**, not "span id" — worth insisting on, because
+the sender writes *its own span ID* into that slot and the receiver reads it as
+*its parent*. One value, two names, depending which end you stand at. Nothing in
+the header describes the receiver: the receiver does not exist yet when the
+header is written.
+
+```mermaid
+flowchart LR
+    subgraph HDR["traceparent value"]
+        direction TB
+        V["<b>00</b><br/>version"]
+        T["<b>4bf92f...e4736</b><br/>trace-id"]
+        P["<b>00f067aa0ba902b7</b><br/>parent-id"]
+        F["<b>01</b><br/>trace-flags"]
+    end
+    R["8 fresh<br/>random bytes"]
+    subgraph ACT["the Activity ASP.NET Core creates"]
+        direction TB
+        AT["TraceId<br/>4bf92f...e4736"]
+        AP["ParentSpanId<br/>00f067aa0ba902b7"]
+        AS["SpanId<br/>a9424df34c863a98"]
+        AF["Recorded = true"]
+    end
+    V -. "must be 00" .-> ACT
+    T --> AT
+    P --> AP
+    F --> AF
+    R --> AS
+```
+
+Note which arrow does not originate in the header: `SpanId`. It has no source in
+`traceparent` at all.
+
+## How the span is built, with and without the header
+
+```mermaid
+flowchart TD
+    A["POST /stores arrives"] --> B{"traceparent present<br/>and well-formed?"}
+
+    B -->|"no — or malformed,<br/>like 12345"| C["<b>Root span</b>"]
+    C --> C1["TraceId = 16 random bytes<br/>SpanId = 8 random bytes<br/>ParentSpanId = 0000000000000000"]
+    C1 --> C2["console:<br/>traceId=3990c621...<br/>parentId=0000000000000000"]
+
+    B -->|yes| D["<b>Child span</b>"]
+    D --> D1["TraceId = header's trace-id<br/>ParentSpanId = header's parent-id<br/>SpanId = 8 random bytes"]
+    D1 --> D2["console:<br/>traceId=4bf92f...e4736<br/>parentId=00f067aa0ba902b7"]
+```
+
+A malformed header is discarded rather than honoured, and the request falls back
+to the root branch. That is deliberate: a caller sending junk should not be able
+to poison the receiver's telemetry.
+
 ## What to look for when running it
 
 Start the API (`http` profile) and send the requests in `OpenTelemetry.Api.http`
