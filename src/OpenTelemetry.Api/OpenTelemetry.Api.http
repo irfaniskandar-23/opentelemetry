@@ -1,6 +1,34 @@
 @OpenTelemetry.Api_HostAddress = http://localhost:5038
 
-GET {{OpenTelemetry.Api_HostAddress}}/weatherforecast/
+### Create a store. Watch the console: one activity, its traceId invented by .NET.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+
+{
+  "name": "Jakarta Pusat Flagship",
+  "address": "Jl. M.H. Thamrin No. 1, Jakarta"
+}
+
+### The same request, this time carrying a trace context of our own.
+# Format: version-traceId-parentSpanId-flags
+# The console should print traceId=4bf92f3577b34da6a3ce929d0e0e4736 and
+# parentId=00f067aa0ba902b7. Nothing in Program.cs parses this header —
+# ASP.NET Core does it, per the W3C Trace Context spec.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+
+{
+  "name": "Bandung Outlet",
+  "address": "Jl. Asia Afrika No. 8, Bandung"
+}
+
+### Read one store back. Replace the id with one returned above.
+GET {{OpenTelemetry.Api_HostAddress}}/stores/00000000-0000-0000-0000-000000000000
+Accept: application/json
+
+### List every store.
+GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 
 ###
