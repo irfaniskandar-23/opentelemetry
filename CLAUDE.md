@@ -16,8 +16,12 @@ That spec is the source of truth. Read it before proposing work.
 
 ## Current state
 
-**Phase 0 — nothing implemented yet.** The repository holds the stock .NET 10
-minimal API template (weatherforecast), the spec, and this file.
+**Phase 1 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
+`GET /stores`) is in place over an in-memory dictionary, with a hand-written
+`ActivityListener` printing spans to the console. Still zero dependencies.
+Notes: `docs/phase-1-activity.md`.
+
+Next: phase 2 — a custom `ActivitySource` and business attributes.
 
 Update this section in every phase's PR.
 
@@ -68,7 +72,7 @@ excluded on purpose — they teach nothing new about tracing.
 
 | # | Phase | Teaches | Status |
 |---|---|---|---|
-| 1 | Activity, observed | What .NET already records, with zero packages | Not started |
+| 1 | Activity, observed | What .NET already records, with zero packages | Done |
 | 2 | Custom spans and attributes | Attaching `store.id` to an operation | Not started |
 | 3 | Exceptions and ProblemDetails | `IExceptionHandler`, errors on the span | Not started |
 | 4 | `traceparent` on the response | W3C Trace Context, header format | Not started |
