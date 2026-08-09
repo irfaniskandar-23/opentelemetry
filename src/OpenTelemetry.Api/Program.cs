@@ -5,6 +5,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ConcurrentDictionary<Guid, Store>>();
 
+// AddProblemDetails registers the service that writes RFC 9457 bodies; without
+// it the parameterless UseExceptionHandler below has no fallback and throws.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 // .NET only materialises activities when something is listening. Without this
 // listener, ASP.NET Core's per-request Activity is never created and the code
 // below prints nothing. No package is involved: Activity, ActivitySource and
@@ -37,16 +42,34 @@ var listener = new ActivityListener
     ActivityStopped = activity =>
     {
         var tags = string.Join(", ", activity.TagObjects.Select(tag => $"{tag.Key}={tag.Value}"));
+
+        // AddException records an event, not a tag, so events need their own
+        // line here or the exception is invisible in this console output.
+        var events = string.Join(", ", activity.Events.Select(e => e.Name));
+
         Console.WriteLine(
             $"[stop ] {activity.DisplayName} kind={activity.Kind} " +
             $"traceId={activity.TraceId} parentId={activity.ParentSpanId} spanId={activity.SpanId} " +
-            $"duration={activity.Duration.TotalMilliseconds:F1}ms tags=[{tags}]");
+            $"duration={activity.Duration.TotalMilliseconds:F1}ms status={activity.Status} " +
+            $"tags=[{tags}] events=[{events}]");
+
+        foreach (var activityEvent in activity.Events)
+        {
+            foreach (var tag in activityEvent.Tags)
+            {
+                Console.WriteLine($"         {tag.Key}={tag.Value}");
+            }
+        }
     }
 };
 
 ActivitySource.AddActivityListener(listener);
 
 var app = builder.Build();
+
+// Wraps everything registered after it in a try/catch, inside the developer
+// exception page — so it catches first and the dev page never fires.
+app.UseExceptionHandler();
 
 app.MapPost("/stores", (CreateStoreRequest request, ConcurrentDictionary<Guid, Store> stores) =>
 {
@@ -85,6 +108,14 @@ app.MapGet("/stores/{id:guid}", (Guid id, ConcurrentDictionary<Guid, Store> stor
         : Results.NotFound());
 
 app.MapGet("/stores", (ConcurrentDictionary<Guid, Store> stores) => stores.Values);
+
+// Throws on purpose, to exercise the exception handler.
+// The block body is required: a bare `throw` expression has no inferred return
+// type, so overload resolution picks MapGet(string, RequestDelegate) instead.
+app.MapGet("/stores/{id:guid}/boom", (Guid id) =>
+{
+    throw new InvalidOperationException($"Deliberate failure for store {id}.");
+});
 
 app.Run();
 

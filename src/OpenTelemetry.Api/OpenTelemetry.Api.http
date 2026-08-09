@@ -31,4 +31,9 @@ Accept: application/json
 GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 
+### Throw on purpose. Right now nothing handles this: the body is whatever
+### ASP.NET Core produces by default, and the span stops without saying it failed.
+GET {{OpenTelemetry.Api_HostAddress}}/stores/00000000-0000-0000-0000-000000000000/boom
+Accept: application/json
+
 ###

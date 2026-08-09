@@ -16,14 +16,19 @@ That spec is the source of truth. Read it before proposing work.
 
 ## Current state
 
-**Phase 2 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
+**Phase 3 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
 `GET /stores`) sits over an in-memory dictionary, with a hand-written
-`ActivityListener` printing spans to the console. `POST /stores` now starts a
-`CreateStore` child span from the application's own `ActivitySource`
-(`Telemetry.cs`), tagged with `store.id` and `store.name`. Still zero
-dependencies. Notes: `docs/phase-1-activity.md`, `docs/phase-2-custom-spans.md`.
+`ActivityListener` printing spans, status and events to the console. `POST
+/stores` starts a `CreateStore` child span from the application's own
+`ActivitySource` (`Telemetry.cs`), tagged with `store.id` and `store.name`.
+`GET /stores/{id}/boom` throws, and `GlobalExceptionHandler` (an
+`IExceptionHandler`) marks `Activity.Current` as `Error`, records the exception
+on it, and returns RFC 9457 ProblemDetails. Still zero dependencies. Notes:
+`docs/phase-1-activity.md`, `docs/phase-2-custom-spans.md`,
+`docs/phase-3-exceptions.md`.
 
-Next: phase 3 — `IExceptionHandler`, ProblemDetails, and errors on the span.
+Next: phase 4 — `traceparent` on the response. Note that `AddProblemDetails()`
+already puts a `traceId` in the error body, so part of that phase is done.
 
 Update this section in every phase's PR.
 
@@ -76,7 +81,7 @@ excluded on purpose — they teach nothing new about tracing.
 |---|---|---|---|
 | 1 | Activity, observed | What .NET already records, with zero packages | Done |
 | 2 | Custom spans and attributes | Attaching `store.id` to an operation | Done |
-| 3 | Exceptions and ProblemDetails | `IExceptionHandler`, errors on the span | Not started |
+| 3 | Exceptions and ProblemDetails | `IExceptionHandler`, errors on the span | Done |
 | 4 | `traceparent` on the response | W3C Trace Context, header format | Not started |
 | 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Not started |
 | 6 | The network hop | Automatic context propagation over HTTP | Not started |
