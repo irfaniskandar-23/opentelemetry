@@ -16,12 +16,14 @@ That spec is the source of truth. Read it before proposing work.
 
 ## Current state
 
-**Phase 1 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
-`GET /stores`) is in place over an in-memory dictionary, with a hand-written
-`ActivityListener` printing spans to the console. Still zero dependencies.
-Notes: `docs/phase-1-activity.md`.
+**Phase 2 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
+`GET /stores`) sits over an in-memory dictionary, with a hand-written
+`ActivityListener` printing spans to the console. `POST /stores` now starts a
+`CreateStore` child span from the application's own `ActivitySource`
+(`Telemetry.cs`), tagged with `store.id` and `store.name`. Still zero
+dependencies. Notes: `docs/phase-1-activity.md`, `docs/phase-2-custom-spans.md`.
 
-Next: phase 2 — a custom `ActivitySource` and business attributes.
+Next: phase 3 — `IExceptionHandler`, ProblemDetails, and errors on the span.
 
 Update this section in every phase's PR.
 
@@ -73,7 +75,7 @@ excluded on purpose — they teach nothing new about tracing.
 | # | Phase | Teaches | Status |
 |---|---|---|---|
 | 1 | Activity, observed | What .NET already records, with zero packages | Done |
-| 2 | Custom spans and attributes | Attaching `store.id` to an operation | Not started |
+| 2 | Custom spans and attributes | Attaching `store.id` to an operation | Done |
 | 3 | Exceptions and ProblemDetails | `IExceptionHandler`, errors on the span | Not started |
 | 4 | `traceparent` on the response | W3C Trace Context, header format | Not started |
 | 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Not started |
