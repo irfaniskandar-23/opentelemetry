@@ -30,7 +30,12 @@ var listener = new ActivityListener
 
     // AllData means "create the activity and populate its tags". Anything less
     // and the activity is either hollow or skipped entirely.
-    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+    //
+    // AndRecorded is what sets the Recorded trace flag, which is the last byte
+    // of the traceparent header: 01 sampled, 00 not. Plain AllData populates the
+    // activity locally but emits -00, telling every downstream service "don't
+    // bother recording this trace" — the opposite of what we mean.
+    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
 
     // traceId, then parentId, then spanId — the order the tree is read in:
     // which journey, who called me, who I am.
@@ -69,7 +74,31 @@ var app = builder.Build();
 
 // Wraps everything registered after it in a try/catch, inside the developer
 // exception page — so it catches first and the dev page never fires.
-app.UseExceptionHandler();
+app.UseExceptionHandler(); //catch and call response.clear
+
+// One middleware, one job: stamp the current trace onto every response so a
+// caller can quote it in a bug report.
+//
+// Written BEFORE await next() on purpose. HTTP sends headers ahead of the body,
+// so once the endpoint writes its first byte the headers are already on the
+// wire. Move this line below await next() and it still compiles, still throws
+// nothing, and silently changes nothing.
+app.Use(async (context, next) =>
+{
+    // Activity.Id is already the W3C string — 00-<traceId>-<spanId>-<flags>.
+    // Nothing to assemble by hand.
+    var activity = Activity.Current;
+
+    if (activity is not null)
+    {
+        // .TraceParent, not Headers["traceparent"]: well-known headers have
+        // dedicated fields on IHeaderDictionary, so this skips the string hash
+        // and a typo stops compiling. On the wire the name is still lowercase.
+        context.Response.Headers.TraceParent = activity.Id;
+    }
+
+    await next();
+});
 
 app.MapPost("/stores", (CreateStoreRequest request, ConcurrentDictionary<Guid, Store> stores) =>
 {
