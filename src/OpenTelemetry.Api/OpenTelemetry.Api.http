@@ -31,9 +31,26 @@ Accept: application/json
 GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 
-### Throw on purpose. Right now nothing handles this: the body is whatever
-### ASP.NET Core produces by default, and the span stops without saying it failed.
+### Throw on purpose. GlobalExceptionHandler catches it, marks the span Error
+### and returns RFC 9457 ProblemDetails.
+###
+### Phase 4: check the response headers. The traceparent here is written by
+### GlobalExceptionHandler, not by the middleware — UseExceptionHandler called
+### Response.Clear() and wiped the middleware's copy on the way past. The header
+### and the body's traceId should be byte-for-byte identical.
 GET {{OpenTelemetry.Api_HostAddress}}/stores/00000000-0000-0000-0000-000000000000/boom
 Accept: application/json
+
+### Phase 4. Send no traceparent and read the one that comes back. .NET invents
+### a trace id, and the header's second field matches the console's spanId.
+GET {{OpenTelemetry.Api_HostAddress}}/stores
+Accept: application/json
+
+### Phase 4. Send a traceparent and compare it with the response's.
+### Field 2 (trace id) comes back unchanged — same journey.
+### Field 3 (span id) is different — the server span is a new participant in it.
+GET {{OpenTelemetry.Api_HostAddress}}/stores
+Accept: application/json
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 
 ###
