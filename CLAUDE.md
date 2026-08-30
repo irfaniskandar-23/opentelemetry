@@ -16,24 +16,33 @@ That spec is the source of truth. Read it before proposing work.
 
 ## Current state
 
-**Phase 4 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
-`GET /stores`) sits over an in-memory dictionary, with a hand-written
-`ActivityListener` printing spans, status and events to the console. `POST
-/stores` starts a `CreateStore` child span from the application's own
-`ActivitySource` (`Telemetry.cs`), tagged with `store.id` and `store.name`.
+**Phase 5 complete.** The store domain (`POST /stores`, `GET /stores/{id}`,
+`GET /stores`) sits over an in-memory dictionary. `POST /stores` starts a
+`CreateStore` child span from the application's own `ActivitySource`
+(`Telemetry.cs`), tagged with `store.id` and `store.name`.
 `GET /stores/{id}/boom` throws, and `GlobalExceptionHandler` (an
 `IExceptionHandler`) marks `Activity.Current` as `Error`, records the exception
 on it, and returns RFC 9457 ProblemDetails. Every response carries a
 `traceparent` header: an inline middleware writes it on the success path, and
 `GlobalExceptionHandler` writes it again on the error path because
-`UseExceptionHandler` calls `Response.Clear()` in between. The listener samples
-`AllDataAndRecorded`, so the header's sampled flag is `01`. Still zero
-dependencies. Notes: `docs/phase-1-activity.md`, `docs/phase-2-custom-spans.md`,
-`docs/phase-3-exceptions.md`, `docs/phase-4-traceparent.md`.
+`UseExceptionHandler` calls `Response.Clear()` in between.
 
-Next: phase 5 — the OpenTelemetry SDK and Better Stack. This is the first phase
-that installs packages, and the one where the hand-written `ActivityListener` is
-deleted.
+The hand-written `ActivityListener` is gone. The OpenTelemetry SDK replaces it:
+`AddSource(Telemetry.SourceName)` for the application's own spans,
+`AddAspNetCoreInstrumentation()` (with an `EnrichWithHttpRequest` hook) for the
+request span, a resource carrying `service.name` and
+`deployment.environment.name`, and an OTLP exporter over HTTP/protobuf to Better
+Stack. The endpoint lives in `appsettings.json`; the source token lives in user
+secrets. Two csproj lines — `PackageId` and `AssemblyName`, both `StoreApi` —
+resolve the collision between this project's name and the real
+`OpenTelemetry.Api` package; nothing else is renamed. Notes:
+`docs/phase-1-activity.md`, `docs/phase-2-custom-spans.md`,
+`docs/phase-3-exceptions.md`, `docs/phase-4-traceparent.md`,
+`docs/phase-5-otel-sdk.md`.
+
+Next: phase 6 — the network hop. A second service, `HttpClient`, and automatic
+context propagation, where `CreateStore` gains its first child span and a
+`client`/`server` pair spans two processes.
 
 Update this section in every phase's PR.
 
@@ -88,7 +97,7 @@ excluded on purpose — they teach nothing new about tracing.
 | 2 | Custom spans and attributes | Attaching `store.id` to an operation | Done |
 | 3 | Exceptions and ProblemDetails | `IExceptionHandler`, errors on the span | Done |
 | 4 | `traceparent` on the response | W3C Trace Context, header format | Done |
-| 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Not started |
+| 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Done |
 | 6 | The network hop | Automatic context propagation over HTTP | Not started |
 | 7 | Logs and trace correlation | Generic messages, structured properties | Not started |
 
