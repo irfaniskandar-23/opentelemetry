@@ -1,9 +1,26 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>0017f1f9-cfd1-4509-be0e-59644a1d68d8</UserSecretsId>
+    <!-- This project shares a name with the real OpenTelemetry.Api NuGet package, which
+         appears in the OpenTelemetry SDK's dependency tree. Without overriding the package
+         identity, NuGet believes the project depends on itself and restore fails with
+         NU1108: Cycle detected. Nothing else about the project is renamed. -->
+    <PackageId>StoreApi</PackageId>
+    <!-- Same collision, second place. PackageId fixes restore; this fixes runtime.
+         Without it the compiled output is OpenTelemetry.Api.dll, which shadows the
+         real OpenTelemetry.Api assembly, and type loads fail with TypeLoadException
+         at startup. The folder and namespaces are still untouched. -->
+    <AssemblyName>StoreApi</AssemblyName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+  </ItemGroup>
 
 </Project>
