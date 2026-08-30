@@ -79,7 +79,7 @@ flowchart TD
 
         B["CreateStore · INTERNAL<br/>─────────────<br/>store.id<br/>store.name<br/>store.address ← set by us"]
 
-        C["GET /search · CLIENT<br/>─────────────<br/>http.request.method = GET<br/>server.address = nominatim.openstreetmap.org<br/>server.port = 443<br/>url.full = ...?q=Redacted<br/>http.response.status_code = 200<br/>network.protocol.version = 1.1<br/>error.type — only on failure<br/>─────────────<br/>geocode.latitude ← set by us<br/>geocode.longitude ← set by us<br/>geocode.match_count ← set by us"]
+        C["GET /search · CLIENT<br/>─────────────<br/>http.request.method = GET<br/>server.address = nominatim.openstreetmap.org<br/>server.port = 443<br/>url.full = ...?q=*<br/>http.response.status_code = 200<br/>network.protocol.version = 1.1<br/>error.type — only on failure<br/>─────────────<br/>geocode.latitude ← set by us<br/>geocode.longitude ← set by us<br/>geocode.match_count ← set by us"]
 
         A --> B --> C
     end
@@ -101,7 +101,7 @@ failure.
 
 | Attribute | Why it earns its place |
 |---|---|
-| `store.address` | `url.full` **redacts query-string values by default**, so the address renders as `q=Redacted`. To be searchable it must be set deliberately, having first decided it is not sensitive. |
+| `store.address` | `url.full` **redacts query-string values by default**, so the address renders as `search?q=*`. To be searchable it must be set deliberately, having first decided it is not sensitive. |
 | `geocode.latitude` / `geocode.longitude` | The outcome of the call. Two small scalars. |
 | `geocode.match_count` | Separates "no match" from "ambiguous match" without storing the body. |
 
@@ -112,6 +112,95 @@ failure.
   `http.response.body` convention for exactly this reason. Pick fields.
 - **Aggregate metric values.** Stamping a p99 `time_in_queue` onto a span asserts
   a per-request fact that was never measured per request. See below.
+
+
+---
+
+## Enrichment: the hook, and where it is the wrong tool
+
+OpenTelemetry supplies every attribute in the HTTP Client semantic conventions
+without help. Enrichment exists for the rest, and the instrumentation library
+offers three hooks:
+
+```csharp
+.AddHttpClientInstrumentation(options =>
+{
+    options.EnrichWithHttpRequestMessage = (activity, request) =>
+        activity.SetTag("http.client.name", "Geocoding");
+
+    options.EnrichWithHttpResponseMessage = (activity, response) =>
+    {
+        if (response.Headers.TryGetValues("Server-Timing", out var v))
+            activity.SetTag("http.server_timing", string.Join(",", v));
+    };
+
+    options.EnrichWithException = (activity, exception) =>
+        activity.SetTag("geocode.failure", exception.GetType().Name);
+})
+```
+
+Two facts about how they run:
+
+- They are called **only when `activity.IsAllDataRequested` is `true`** — that
+  is, only for sampled activities. An enricher that appears dead is often just
+  attached to an unsampled span.
+- Order is: processor `OnStart` → request enrichment → exception enrichment →
+  response enrichment → processor `OnEnd`.
+
+### Why the geocoding results are *not* set by an enricher
+
+`geocode.latitude`, `geocode.longitude` and `geocode.match_count` come from the
+**response body**, and `EnrichWithHttpResponseMessage` is the wrong place to read
+a body: the callback is synchronous, and consuming or buffering the content
+stream there interferes with the caller that is about to read it properly.
+
+So the division is:
+
+| Source of the value | Where it is set |
+|---|---|
+| Request or response **metadata** — headers, version, client name | client span, via an enricher |
+| Response **body**, after parsing | our own `CreateStore` span, in the handler |
+| Anything the semantic conventions already define | nowhere — it is already there |
+
+This is why the span tree above shows `geocode.*` on the client span
+conceptually, but the code will set them on `CreateStore`. Recorded here so the
+discrepancy is deliberate rather than an oversight.
+
+---
+
+## What comes from OpenTelemetry, and what comes from .NET
+
+Worth separating, because "the .NET docs say X" and "OpenTelemetry says X" have
+been used interchangeably above.
+
+| Concern | Whose rule |
+|---|---|
+| Which attributes an HTTP client span carries, and their names | **OpenTelemetry** — HTTP Client Semantic Conventions. .NET states it follows them. |
+| Span kinds; links vs. parent-child | **OpenTelemetry** — `ActivityLink` is .NET's spelling of an OTel Link. |
+| The `System.Net.Http` metric names | **OpenTelemetry** — standardised in the semconv `dotnet` namespace. |
+| That connection setup is a root span and queue wait is a child | **.NET** — a modelling decision, not something OTel mandates. |
+| `traceparent` on the wire | **W3C**, older than both. |
+| Enrichment, filtering | **OpenTelemetry .NET** — the instrumentation library, not the runtime. |
+
+On .NET 9+ the runtime creates the HTTP client activity itself, from the native
+`System.Net.Http` source. The instrumentation library's README states it "will
+not add/change/override any attributes set by the native instrumentation but it
+is still required for performing context propagation... and supports additional
+features not available in runtime (enrichment, filtering, etc.)."
+
+That is the same lesson as phase 5, one layer out: the runtime records, and
+OpenTelemetry collects and standardises. Whether the `traceparent` injection on
+.NET 10 comes from the runtime or from the package is worth confirming by
+experiment when the code exists — the README's wording and .NET's own
+`DistributedContextPropagator` both have a claim on it.
+
+### What no specification can give us
+
+The remote server's own processing time, when the remote is not instrumented.
+OpenTelemetry standardises how to *record* a client span; it cannot conjure data
+from a service that reports nothing. W3C Trace Context Level 2 defines a
+`traceresponse` header, but it returns identifiers, not timing, and Nominatim
+does not send it. The limit is real and no library removes it.
 
 ---
 
@@ -142,16 +231,22 @@ matches the `traceparent` response header phase 4's middleware returns.
 
 ## The client span reports one number for five things
 
-The client span's duration covers all of this, undivided:
+The client span's duration covers all of this:
 
 ```mermaid
 flowchart LR
     Q["queued for a<br/>free connection"] --> S["connection setup<br/>DNS · TCP · TLS<br/>only if none reusable"] --> O["transit out"] --> P["Nominatim's<br/>own processing"] --> I["transit back"]
 ```
 
-A single `380ms` cannot be decomposed from the calling side. This matters because
-the temptation is to read it as "the API is slow" and take it to the provider —
-when several of those segments are entirely our own fault:
+**Correction to an earlier draft of this note:** two of those five *are*
+separately observable on .NET 9+, through the experimental activities covered in
+phase 6.1 — see the table below. What stays inseparable from the calling side is
+transit out, Nominatim's own processing, and transit back. That residue is the
+real limit.
+
+It matters because the temptation is to read a single `380ms` as "the API is
+slow" and take it to the provider — when several segments are entirely our own
+fault:
 
 - **Pool starvation.** If every connection is busy, the request waits before a
   byte moves. Reported as `http.client.request.time_in_queue`.
@@ -168,14 +263,20 @@ the standard mitigation for the first two.
 
 ### What would separate the segments, and where it lives
 
-| Signal | Answers | Built here? |
-|---|---|---|
-| `http.client.request.time_in_queue` | pool starvation | no — metrics are out of scope |
-| `http.client.open_connections` | pool size and churn | no |
-| `http.client.connection.duration` | reuse vs. constant reconnection | no |
-| `dns.lookup.duration` | DNS cost | no |
-| `Experimental.System.Net.Http.Connections` activity | setup cost | **phase 6.1** |
-| `Server-Timing` response header | the remote side's own processing | Nominatim does not send it |
+| Signal | Kind | Answers | Built here? |
+|---|---|---|---|
+| `...Connections.WaitForConnection` activity | **child span** of the client span | time queued for a free connection | **phase 6.1** |
+| `...Connections.ConnectionSetup` activity | **root span, linked** | DNS + socket + TLS cost | **phase 6.1** |
+| `...NameResolution.DnsLookup` activity | child of connection setup | DNS cost alone | phase 6.1, if useful |
+| `...Sockets.Connect`, `...Security.TlsHandshake` | children of connection setup | socket and TLS cost | phase 6.1, if useful |
+| `http.client.request.time_in_queue` | metric | queueing, in aggregate | no — metrics are out of scope |
+| `http.client.open_connections` | metric | pool size and churn | no |
+| `http.client.connection.duration` | metric | reuse vs. constant reconnection | no |
+| `Server-Timing` response header | header | the remote side's own processing | Nominatim does not send it |
+
+All five activities are marked **experimental** by .NET and may change or be
+removed. They are also `Experimental.*`-prefixed sources, so nothing appears
+unless explicitly subscribed to.
 
 **What not to do:** reconstruct the split locally by timing the call twice,
 subtracting a ping, or comparing against a health-check endpoint. Different
@@ -215,6 +316,20 @@ off each client span meaning *"I was served by that connection."* A link is a
 reference, not a containment claim; requests #1 and #147 both link to the same
 connection and neither owns it.
 
+The contrast that makes the rule concrete is that .NET models the *queue wait*
+the opposite way. `HTTP wait_for_connection` **is** a child of the client request
+span, because waiting is genuinely part of that one request and ends before it
+does. Same feature area, two different structural choices, decided by the same
+test:
+
+| | Belongs to | Modelled as |
+|---|---|---|
+| `wait_for_connection` | this one request | **child span** |
+| `connection_setup` | the connection, shared | **root span + link** |
+
+Ask *whose cost is this, and does it end before the request does* — the answer
+picks the edge type.
+
 Note that request #1's span duration genuinely *is* ~210ms — it really did wait.
 The objection was never to the number, only to a tree shape that implies
 ownership.
@@ -243,3 +358,16 @@ ownership.
 - What a client span's duration blends together, and which signal separates each
   part.
 - Why `IHttpClientFactory` is a correctness fix, not a style preference.
+- Enrichment: what it is for, when it is the wrong tool, and that it only runs
+  for sampled activities.
+- Which rules come from OpenTelemetry, which from .NET, and which from W3C.
+
+## Sources
+
+- [Built-in activities in .NET](https://learn.microsoft.com/dotnet/core/diagnostics/distributed-tracing-builtin-activities#systemnet-activities)
+  — the client request, wait-for-connection, connection setup, DNS, socket and
+  TLS activities, and the root-plus-link rule quoted above.
+- [System.Net metrics](https://learn.microsoft.com/dotnet/core/diagnostics/built-in-metrics-system-net)
+- [OpenTelemetry.Instrumentation.Http README](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/blob/main/src/OpenTelemetry.Instrumentation.Http/README.md)
+  — enrichment hooks, callback order, and the .NET 9+ native-instrumentation note.
+- [OpenTelemetry HTTP Client Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/http/http-spans/#http-client)
