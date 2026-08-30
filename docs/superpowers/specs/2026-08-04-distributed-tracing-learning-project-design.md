@@ -35,13 +35,12 @@ These constrain every phase and override any instinct to build more:
 
 ## Architecture
 
-A single ASP.NET Core minimal API for phases 1–5. A second service appears in
-phase 6, when a network hop is needed.
+A single ASP.NET Core minimal API throughout. The network hop in phase 6 is a
+call to a third-party service, so no second project is ever created.
 
 ```
 src/
-  OpenTelemetry.Api           StoreApi   — the main service (phases 1–7)
-  OpenTelemetry.GeocodingApi  Geocoding  — created in phase 6 only
+  OpenTelemetry.Api           StoreApi   — the only service
 docs/
   phase-1-activity.md         one note per phase
   ...
@@ -71,7 +70,7 @@ add a second span type before the first one is understood.
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /stores` | Write path. Carries business attributes; gains the geocoding hop in phase 6. |
+| `POST /stores` | Write path. Carries business attributes; gains the geocoding call in phase 6. |
 | `GET /stores/{id}` | Read path. Mirrors the "a GET failed and I don't know whose it was" problem. |
 | `GET /stores` | List. Kept because a trivially fast span is a useful contrast in a waterfall. |
 | `GET /stores/{id}/boom` | Throws deliberately. Introduced in phase 3, retained thereafter. |
@@ -86,10 +85,10 @@ Client
   |  traceparent (optional; generated if absent)
   v
 StoreApi  POST /stores
-  |-- validate                                    child span
-  |-- GET /geocode  ---> GeocodingApi             client span + server span
-  |                        |-- lookup             child span (may throw)
-  |-- save to dictionary                          child span, attr store.id
+  |-- CreateStore                                 child span, attrs store.id, store.name
+  |     |-- GET nominatim.openstreetmap.org       client span; traceparent injected
+  |     |                                         link -> connection setup (phase 6.1)
+  |     |-- save to dictionary
   v
 Response  201 Created  +  traceparent header
    (on failure: RFC 9457 ProblemDetails including traceId)
@@ -210,30 +209,93 @@ both consume OTLP. No other phase is affected.
 
 **Question answered:** are outbound I/O calls instrumented manually, or is it
 automatic?
-**Dependencies added:** `OpenTelemetry.Instrumentation.Http`; new project
-`src/OpenTelemetry.GeocodingApi`.
+**Dependencies added:** `OpenTelemetry.Instrumentation.Http`.
 
-GeocodingApi exposes `GET /geocode?address=...`, holds a hardcoded map of a few
-known addresses, applies an artificial delay of several hundred milliseconds, and
-throws for unknown addresses. It registers the OpenTelemetry SDK the same way
-StoreApi does.
+`POST /stores` geocodes the submitted address by calling Nominatim, the
+OpenStreetMap geocoding service, through `IHttpClientFactory`:
 
-StoreApi calls it via `IHttpClientFactory` during `POST /stores` and stores the
-returned coordinates. A geocoding failure fails the request.
+```
+GET https://nominatim.openstreetmap.org/search?q={address}&format=json&limit=1
+```
+
+It is free and needs no key. It returns `403` to clients sending a generic
+`User-Agent` — Postman's default is blocked — and permits one request per
+second. Both are handled once, at client registration. An address it cannot
+resolve returns an empty JSON array, which fails the request.
 
 The answer to the phase question is that it is automatic:
 `AddHttpClientInstrumentation()` creates the client span and injects the
-`traceparent` header, and the receiving service continues the trace with no code
-on either side. The work in this phase is proving that, then adding only the
-attributes the library cannot infer.
+`traceparent` header with no code on the calling side. The work in this phase is
+proving that, then adding only the attributes the library cannot infer —
+`url.full` redacts query-string values by default, so the address is set
+deliberately as an application attribute or not at all.
 
-**Verify:** one trace spans both processes. A known address produces a successful
-waterfall dominated by the geocoding call; an unknown address produces a failed
-trace where the error is visible in GeocodingApi while the request under
-investigation was made against StoreApi.
+`IHttpClientFactory` is used rather than a bare `HttpClient`. The tracing reason
+is that it is the idiomatic registration point; the more important reason is that
+it pools and recycles handlers, which is the standard mitigation for socket
+exhaustion and stale DNS.
+
+**A third party, not a second service.** An earlier draft of this spec built
+`src/OpenTelemetry.GeocodingApi` for StoreApi to call. Calling a real service
+instead is a deliberate trade, and it changes what the phase proves:
+
+- **Proven:** the client span exists, sits under `CreateStore` in the waterfall,
+  carries the trace ID, and leaves with a `traceparent` header StoreApi never
+  wrote.
+- **Not proven:** that anyone *reads* that header. Nominatim does not report to
+  this account, so no server span appears beneath the client span. Continuation
+  is asserted, not observed.
+- **Gained:** real failure modes — `403` from a missing `User-Agent`, an empty
+  result for an unresolvable address, real latency and real network variance —
+  in place of a hardcoded dictionary and an artificial delay.
+
+**One number, five causes.** The client span reports a single duration covering
+time queued for a free connection, connection setup, transit each way, and
+Nominatim's own processing. It cannot be decomposed from the client side. What
+would separate them: the `System.Net.Http` metrics (`time_in_queue`,
+`open_connections`, `connection.duration`) for pool health, the connection setup
+activity for setup cost — phase 6.1 — and `Server-Timing` for the remote side,
+which Nominatim does not send. Metrics stay out of scope; the limitation is
+recorded in the notes so the number is never quoted as though it meant one thing.
+
+**Verify:** a known address produces a trace whose waterfall is dominated by the
+Nominatim call, and the stored `Store` carries coordinates. An unresolvable
+address produces a failed trace with the error on the StoreApi spans. Sending the
+same request through Postman with its default `User-Agent` — or removing the
+configured one — produces a client span tagged `http.response.status_code: 403`.
 
 **Note covers:** span kinds (server, client, internal); context propagation over
-HTTP; why the injected header is the same standard typed by hand in phase 1.
+HTTP; that the injected header is the same standard typed by hand in phase 1;
+why `url.full` redacts query values; what the client span's duration does and
+does not include.
+
+### Phase 6.1 — Connection cost
+
+**Question answered:** why is the cost of opening a connection not part of the
+request that opened it?
+**Dependencies added:** none.
+
+Subscribe to the `Experimental.System.Net.Http.Connections` activity source
+(.NET 9+), which measures DNS resolution, socket connect and TLS handshake.
+
+The lesson is structural. This activity is always a **root activity in its own
+trace**, never a child of the request. A connection is opened once and then
+serves many requests over minutes: parenting it under whichever request happened
+to open it would bill that one request for a cost the others share, and the
+connection outlives that request anyway, so the lifetimes cannot nest. Instead
+the instrumentation adds an `ActivityLink` from each client request span to the
+connection that served it — a reference, not a containment claim.
+
+This is a tracing concept, not a metrics one, which is why it is in scope while
+the `System.Net.Http` metrics are not.
+
+**Verify:** the first `POST /stores` after startup produces a separate
+`HTTP connection_setup nominatim.openstreetmap.org:443` trace, and the client
+span in the main trace carries a link to it. Subsequent requests within the pool
+lifetime reuse the connection and produce no new setup trace.
+
+**Note covers:** links versus parent-child edges; why shared resources cannot be
+children; connection reuse and what a second request does not pay for.
 
 ### Phase 7 — Logs and trace correlation
 

@@ -40,9 +40,11 @@ resolve the collision between this project's name and the real
 `docs/phase-3-exceptions.md`, `docs/phase-4-traceparent.md`,
 `docs/phase-5-otel-sdk.md`.
 
-Next: phase 6 — the network hop. A second service, `HttpClient`, and automatic
-context propagation, where `CreateStore` gains its first child span and a
-`client`/`server` pair spans two processes.
+Next: phase 6 — the network hop. `IHttpClientFactory` and
+`AddHttpClientInstrumentation()`, calling Nominatim to geocode the submitted
+address, where `CreateStore` gains its first child span and the `traceparent` is
+injected on the way out without a line of code. No second service: the hop is to
+a real third party. Phase 6.1 then adds the connection setup activity.
 
 Update this section in every phase's PR.
 
@@ -75,8 +77,7 @@ material and has abandoned similar projects before through feeling overwhelmed.
 ## Layout
 
 ```
-src/OpenTelemetry.Api            StoreApi   — main service
-src/OpenTelemetry.GeocodingApi   Geocoding  — created in phase 6
+src/OpenTelemetry.Api            StoreApi   — the only service
 docs/phase-N-<topic>.md          one note per phase; concepts live here
 docs/superpowers/specs/          the design spec
 ```
@@ -98,7 +99,8 @@ excluded on purpose — they teach nothing new about tracing.
 | 3 | Exceptions and ProblemDetails | `IExceptionHandler`, errors on the span | Done |
 | 4 | `traceparent` on the response | W3C Trace Context, header format | Done |
 | 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Done |
-| 6 | The network hop | Automatic context propagation over HTTP | Not started |
+| 6 | The network hop | Automatic client spans and `traceparent` injection | Not started |
+| 6.1 | Connection cost | Links versus parent-child; shared resources | Not started |
 | 7 | Logs and trace correlation | Generic messages, structured properties | Not started |
 
 ## Conventions
