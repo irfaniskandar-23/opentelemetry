@@ -3,9 +3,9 @@
 **Question answered:** are outbound I/O calls instrumented manually, or is it
 automatic?
 
-**Status:** design settled, code not yet written. This file records the reasoning
-first, because most of phase 6's value is in understanding what the single client
-span does and does not mean.
+**Status:** implemented. Most of this file is reasoning rather than code, because
+the code is one package and a handful of lines, while what the resulting client
+span does and does not mean takes longer to state.
 
 ---
 
@@ -36,17 +36,17 @@ registration. That line is the whole phase.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Client / Postman
+    participant C as Client
     participant S as StoreApi
     participant N as Nominatim
 
     C->>S: POST /stores
     Note over S: ASP.NET Core starts the SERVER span.<br/>Continues the caller's traceparent if sent,<br/>otherwise mints a new trace id.
-    S->>S: CreateStore — INTERNAL span<br/>tags store.id, store.name
-    S->>N: GET /search?q=...&format=json&limit=1<br/>traceparent injected automatically
+    S->>S: CreateStore, an INTERNAL span<br/>tags store.id, store.name
+    S->>N: GET /search (address, format, limit)<br/>traceparent injected automatically
     Note right of N: Nominatim receives the header.<br/>It does not report to our account,<br/>so no span appears on this side.
-    N-->>S: 200 with lat/lon &nbsp;|&nbsp; [] &nbsp;|&nbsp; 403
-    S-->>C: 201 Created + traceparent header
+    N-->>S: 200 with lat/lon, or an empty array, or 403
+    S-->>C: 201 Created plus traceparent header
 ```
 
 Nothing in that diagram requires propagation code.

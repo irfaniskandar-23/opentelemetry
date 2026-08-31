@@ -53,4 +53,40 @@ GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 
+### Phase 6. A resolvable address. The trace now has three spans: the request
+### span, CreateStore, and a CLIENT span for the call to Nominatim that nothing
+### in Program.cs created. Check store.address on CreateStore against url.full
+### on the client span — the query string there is redacted.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+
+{
+  "name": "Brandenburg Gate Kiosk",
+  "address": "Brandenburg Gate, Berlin"
+}
+
+### Phase 6. An address Nominatim cannot resolve. It answers 200 with an empty
+### array, so the failure is ours to detect: geocode.match_count is 0 and the
+### handler throws. GlobalExceptionHandler turns that into ProblemDetails and
+### marks the span Error — no new error-handling code in this phase.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+
+{
+  "name": "Nowhere Outlet",
+  "address": "qwertyuiop asdfghjkl zxcvbnm 12345"
+}
+
+### Phase 6. Send a traceparent of your own and watch it survive the hop. The
+### client span shares this trace id, and the header Nominatim receives carries
+### it too — written by AddHttpClientInstrumentation, not by us.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+
+{
+  "name": "Traced Store",
+  "address": "Eiffel Tower, Paris"
+}
+
 ###
