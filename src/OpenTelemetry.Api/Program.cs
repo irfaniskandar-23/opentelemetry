@@ -1,10 +1,15 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Named once because three places need it: the registration, the resolve, and
+// the enrichment hook that stamps it on the client span.
+const string GeocodingClientName = "Geocoding";
 
 builder.Services.AddSingleton<ConcurrentDictionary<Guid, Store>>();
 
@@ -25,6 +30,25 @@ var betterStackEndpoint = builder.Configuration["BetterStack:Endpoint"]
     ?? throw new InvalidOperationException("BetterStack:Endpoint is not configured.");
 var betterStackToken = builder.Configuration["BetterStack:SourceToken"]
     ?? throw new InvalidOperationException("BetterStack:SourceToken is not configured. Set it with dotnet user-secrets.");
+
+// Nominatim needs no credential, so both values live in appsettings.json.
+var geocodingBaseUrl = builder.Configuration["Geocoding:BaseUrl"]
+    ?? throw new InvalidOperationException("Geocoding:BaseUrl is not configured.");
+var geocodingUserAgent = builder.Configuration["Geocoding:UserAgent"]
+    ?? throw new InvalidOperationException("Geocoding:UserAgent is not configured.");
+
+// A named client, not `new HttpClient()`. The tracing reason is that this is
+// where instrumentation expects to find outbound calls; the more important
+// reason is that IHttpClientFactory pools and recycles the handler underneath,
+// which is what prevents socket exhaustion and stale DNS.
+//
+// The User-Agent is not politeness. Nominatim answers 403 to generic clients —
+// Postman's default is blocked — so without this line every call fails.
+builder.Services.AddHttpClient(GeocodingClientName, client =>
+{
+    client.BaseAddress = new Uri(geocodingBaseUrl);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(geocodingUserAgent);
+});
 
 builder.Services.AddOpenTelemetry()
     // The Resource answers "who is reporting", and its attributes are attached
@@ -68,6 +92,25 @@ builder.Services.AddOpenTelemetry()
                 activity.SetTag("url.query", request.QueryString.Value);
                 activity.SetTag("client.address", request.HttpContext.Connection.RemoteIpAddress?.ToString());
             };
+        })
+
+        // The whole of phase 6, in one line. It creates the CLIENT span for
+        // every outgoing HttpClient call and writes the traceparent header onto
+        // the request — no propagation code anywhere in this file.
+        //
+        // On .NET 9+ the runtime already emits this activity from its own
+        // System.Net.Http source; the package still earns its place for context
+        // propagation plus the enrichment and filtering hooks below.
+        .AddHttpClientInstrumentation(options =>
+        {
+            // Which registered client made the call. The semantic conventions
+            // describe the wire (server.address, url.full) but not our own
+            // naming, so this is exactly the kind of gap enrichment is for.
+            //
+            // Only runs when the activity is sampled — an enricher that looks
+            // dead is usually attached to an unsampled span.
+            options.EnrichWithHttpRequestMessage = (activity, _) =>
+                activity.SetTag("http.client.name", GeocodingClientName);
         })
 
         .AddOtlpExporter(options =>
@@ -118,33 +161,84 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.MapPost("/stores", (CreateStoreRequest request, ConcurrentDictionary<Guid, Store> stores) =>
+app.MapPost("/stores", async (
+    CreateStoreRequest request,
+    ConcurrentDictionary<Guid, Store> stores,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken cancellationToken) =>
 {
-    var store = new Store(
-        Guid.NewGuid(),
-        request.Name,
-        request.Address,
-        Latitude: null,
-        Longitude: null,
-        DateTimeOffset.UtcNow);
-
-    // A child span around the save. `using` matters: disposing the activity is
-    // what stops the clock and fires ActivityStopped. Leave it out and the span
-    // never ends.
+    // A child span around the whole operation. `using` matters: disposing the
+    // activity is what stops the clock and fires ActivityStopped. Leave it out
+    // and the span never ends.
     //
     // StartActivity returns Activity? — null when nobody is listening — so every
     // call below is null-conditional. Instrumented code must not crash an
     // uninstrumented process.
-    using (var activity = Telemetry.Source.StartActivity("CreateStore")) //child span
-    {
-        // The point of the phase. This is a queryable field on the span, not
-        // text inside a message. "Show me the trace for store X" becomes a
-        // filter rather than a grep.
-        activity?.SetTag("store.id", store.Id);
-        activity?.SetTag("store.name", store.Name);
+    //
+    // The geocoding call happens inside this scope on purpose. Activity.Current
+    // is ambient, so whatever is current when HttpClient runs becomes the client
+    // span's parent. Move the call above this line and the client span reparents
+    // to the request span, and the waterfall stops telling the truth about which
+    // operation made it.
+    using var activity = Telemetry.Source.StartActivity("CreateStore"); //child span
 
-        stores[store.Id] = store;
+    // url.full redacts the query string, so the address is only searchable if
+    // it is set here deliberately, having decided it is not sensitive.
+    activity?.SetTag("store.address", request.Address);
+
+    var geocodingClient = httpClientFactory.CreateClient(GeocodingClientName);
+
+    // Relative URI — the base address came from configuration at registration.
+    var response = await geocodingClient.GetAsync(
+        $"search?q={Uri.EscapeDataString(request.Address)}&format=json&limit=1",
+        cancellationToken);
+
+    // A 403 from a missing User-Agent throws here, reaching
+    // GlobalExceptionHandler exactly like the /boom endpoint does. Phase 3
+    // already built the error path; this phase adds a real way to trigger it.
+    response.EnsureSuccessStatusCode();
+
+    var matches = await response.Content
+        .ReadFromJsonAsync<GeocodingMatch[]>(cancellationToken) ?? [];
+
+    // Distinguishes "no match" from "matched something" without storing the
+    // response body on the span.
+    activity?.SetTag("geocode.match_count", matches.Length);
+
+    // Nominatim answers an unresolvable address with an empty array and HTTP
+    // 200, so this is a success status that is not a success.
+    if (matches.Length == 0)
+    {
+        throw new InvalidOperationException(
+            $"No coordinates found for address '{request.Address}'.");
     }
+
+    // Coordinates arrive as strings. InvariantCulture is not optional — under a
+    // comma-decimal locale double.Parse would read "52.5170365" as 525170365.
+    var latitude = double.Parse(matches[0].Lat, CultureInfo.InvariantCulture);
+    var longitude = double.Parse(matches[0].Lon, CultureInfo.InvariantCulture);
+
+    var store = new Store(
+        Guid.NewGuid(),
+        request.Name,
+        request.Address,
+        latitude,
+        longitude,
+        DateTimeOffset.UtcNow);
+
+    // The point of phase 2. These are queryable fields on the span, not text
+    // inside a message. "Show me the trace for store X" becomes a filter rather
+    // than a grep.
+    activity?.SetTag("store.id", store.Id);
+    activity?.SetTag("store.name", store.Name);
+
+    // Set here rather than in EnrichWithHttpResponseMessage: these values come
+    // from the response body, and reading the content stream inside that
+    // synchronous callback would interfere with this code reading it properly.
+    activity?.SetTag("geocode.latitude", latitude);
+    activity?.SetTag("geocode.longitude", longitude);
+
+    stores[store.Id] = store;
 
     return Results.Created($"/stores/{store.Id}", store);
 });
@@ -175,3 +269,8 @@ record Store(
     DateTimeOffset CreatedAt);
 
 record CreateStoreRequest(string Name, string Address);
+
+// Only the two fields this project needs. Nominatim returns roughly twenty more
+// per match; deserialising the whole payload would invite putting it on a span.
+// Lat and Lon are strings in the JSON, not numbers.
+record GeocodingMatch(string Lat, string Lon);
