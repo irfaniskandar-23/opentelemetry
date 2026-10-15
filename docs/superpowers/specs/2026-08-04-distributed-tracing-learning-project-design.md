@@ -87,7 +87,6 @@ Client
 StoreApi  POST /stores
   |-- CreateStore                                 child span, attrs store.id, store.name
   |     |-- GET nominatim.openstreetmap.org       client span; traceparent injected
-  |     |                                         link -> connection setup (phase 6.1)
   |     |-- save to dictionary
   v
 Response  201 Created  +  traceparent header
@@ -253,10 +252,11 @@ instead is a deliberate trade, and it changes what the phase proves:
 time queued for a free connection, connection setup, transit each way, and
 Nominatim's own processing. It cannot be decomposed from the client side. What
 would separate them: the `System.Net.Http` metrics (`time_in_queue`,
-`open_connections`, `connection.duration`) for pool health, the connection setup
-activity for setup cost — phase 6.1 — and `Server-Timing` for the remote side,
-which Nominatim does not send. Metrics stay out of scope; the limitation is
-recorded in the notes so the number is never quoted as though it meant one thing.
+`open_connections`, `connection.duration`) for pool health, the experimental
+connection setup activity for setup cost, and `Server-Timing` for the remote
+side, which Nominatim does not send. Metrics and the experimental connection
+activities both stay out of scope; the limitation is recorded in the notes so
+the number is never quoted as though it meant one thing.
 
 **Verify:** a known address produces a trace whose waterfall is dominated by the
 Nominatim call, and the stored `Store` carries coordinates. An unresolvable
@@ -268,34 +268,6 @@ configured one — produces a client span tagged `http.response.status_code: 403
 HTTP; that the injected header is the same standard typed by hand in phase 1;
 why `url.full` redacts query values; what the client span's duration does and
 does not include.
-
-### Phase 6.1 — Connection cost
-
-**Question answered:** why is the cost of opening a connection not part of the
-request that opened it?
-**Dependencies added:** none.
-
-Subscribe to the `Experimental.System.Net.Http.Connections` activity source
-(.NET 9+), which measures DNS resolution, socket connect and TLS handshake.
-
-The lesson is structural. This activity is always a **root activity in its own
-trace**, never a child of the request. A connection is opened once and then
-serves many requests over minutes: parenting it under whichever request happened
-to open it would bill that one request for a cost the others share, and the
-connection outlives that request anyway, so the lifetimes cannot nest. Instead
-the instrumentation adds an `ActivityLink` from each client request span to the
-connection that served it — a reference, not a containment claim.
-
-This is a tracing concept, not a metrics one, which is why it is in scope while
-the `System.Net.Http` metrics are not.
-
-**Verify:** the first `POST /stores` after startup produces a separate
-`HTTP connection_setup nominatim.openstreetmap.org:443` trace, and the client
-span in the main trace carries a link to it. Subsequent requests within the pool
-lifetime reuse the connection and produce no new setup trace.
-
-**Note covers:** links versus parent-child edges; why shared resources cannot be
-children; connection reuse and what a second request does not pay for.
 
 ### Phase 7 — Logs and trace correlation
 

@@ -84,7 +84,7 @@ flowchart TD
         A --> B --> C
     end
 
-    subgraph T2["Separate trace — phase 6.1"]
+    subgraph T2["Separate trace — not built in this project"]
         D["HTTP connection_setup host:443<br/>─────────────<br/>DNS + socket connect + TLS<br/>lives minutes, serves many requests"]
     end
 
@@ -239,8 +239,8 @@ flowchart LR
 ```
 
 **Correction to an earlier draft of this note:** two of those five *are*
-separately observable on .NET 9+, through the experimental activities covered in
-phase 6.1 — see the table below. What stays inseparable from the calling side is
+separately observable on .NET 9+, through experimental activities this project
+does not subscribe to — see the table below. What stays inseparable from the calling side is
 transit out, Nominatim's own processing, and transit back. That residue is the
 real limit.
 
@@ -265,10 +265,10 @@ the standard mitigation for the first two.
 
 | Signal | Kind | Answers | Built here? |
 |---|---|---|---|
-| `...Connections.WaitForConnection` activity | **child span** of the client span | time queued for a free connection | **phase 6.1** |
-| `...Connections.ConnectionSetup` activity | **root span, linked** | DNS + socket + TLS cost | **phase 6.1** |
-| `...NameResolution.DnsLookup` activity | child of connection setup | DNS cost alone | phase 6.1, if useful |
-| `...Sockets.Connect`, `...Security.TlsHandshake` | children of connection setup | socket and TLS cost | phase 6.1, if useful |
+| `...Connections.WaitForConnection` activity | **child span** of the client span | time queued for a free connection | no — not covered in this project |
+| `...Connections.ConnectionSetup` activity | **root span, linked** | DNS + socket + TLS cost | no — not covered in this project |
+| `...NameResolution.DnsLookup` activity | child of connection setup | DNS cost alone | no |
+| `...Sockets.Connect`, `...Security.TlsHandshake` | children of connection setup | socket and TLS cost | no |
 | `http.client.request.time_in_queue` | metric | queueing, in aggregate | no — metrics are out of scope |
 | `http.client.open_connections` | metric | pool size and churn | no |
 | `http.client.connection.duration` | metric | reuse vs. constant reconnection | no |
@@ -289,7 +289,11 @@ it is what the caller experienced. It is simply a poor measure of *cause*.
 
 ---
 
-## Preview: why connection setup is not a child span (phase 6.1)
+## Why connection setup is not a child span
+
+Not built in this project — a phase for it was planned and dropped. The
+explanation is kept because it describes how .NET actually models connections,
+and it is the clearest example of a link versus a parent-child edge.
 
 Two hundred requests over a minute to the same host:
 
