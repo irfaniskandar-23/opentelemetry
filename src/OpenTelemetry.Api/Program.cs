@@ -182,65 +182,92 @@ app.MapPost("/stores", async (
     // operation made it.
     using var activity = Telemetry.Source.StartActivity("CreateStore"); //child span
 
-    // url.full redacts the query string, so the address is only searchable if
-    // it is set here deliberately, having decided it is not sensitive.
-    activity?.SetTag("store.address", request.Address);
-
-    var geocodingClient = httpClientFactory.CreateClient(GeocodingClientName);
-
-    // Relative URI — the base address came from configuration at registration.
-    var response = await geocodingClient.GetAsync(
-        $"search?q={Uri.EscapeDataString(request.Address)}&format=json&limit=1",
-        cancellationToken);
-
-    // A 403 from a missing User-Agent throws here, reaching
-    // GlobalExceptionHandler exactly like the /boom endpoint does. Phase 3
-    // already built the error path; this phase adds a real way to trigger it.
-    response.EnsureSuccessStatusCode();
-
-    var matches = await response.Content
-        .ReadFromJsonAsync<GeocodingMatch[]>(cancellationToken) ?? [];
-
-    // Distinguishes "no match" from "matched something" without storing the
-    // response body on the span.
-    activity?.SetTag("geocode.match_count", matches.Length);
-
-    // Nominatim answers an unresolvable address with an empty array and HTTP
-    // 200, so this is a success status that is not a success.
-    if (matches.Length == 0)
-    {
-        throw new InvalidOperationException(
-            $"No coordinates found for address '{request.Address}'.");
-    }
-
-    // Coordinates arrive as strings. InvariantCulture is not optional — under a
-    // comma-decimal locale double.Parse would read "52.5170365" as 525170365.
-    var latitude = double.Parse(matches[0].Lat, CultureInfo.InvariantCulture);
-    var longitude = double.Parse(matches[0].Lon, CultureInfo.InvariantCulture);
-
-    var store = new Store(
-        Guid.NewGuid(),
-        request.Name,
-        request.Address,
-        latitude,
-        longitude,
-        DateTimeOffset.UtcNow);
-
     // The point of phase 2. These are queryable fields on the span, not text
     // inside a message. "Show me the trace for store X" becomes a filter rather
     // than a grep.
-    activity?.SetTag("store.id", store.Id);
-    activity?.SetTag("store.name", store.Name);
+    //
+    // Both are set before the call, not after it, so a failed request still
+    // carries the whole payload that caused it.
+    //
+    // url.full redacts the query string, so the address is only searchable if
+    // it is set here deliberately, having decided it is not sensitive.
+    activity?.SetTag("store.name", request.Name);
+    activity?.SetTag("store.address", request.Address);
 
-    // Set here rather than in EnrichWithHttpResponseMessage: these values come
-    // from the response body, and reading the content stream inside that
-    // synchronous callback would interfere with this code reading it properly.
-    activity?.SetTag("geocode.latitude", latitude);
-    activity?.SetTag("geocode.longitude", longitude);
+    try
+    {
+        var geocodingClient = httpClientFactory.CreateClient(GeocodingClientName);
 
-    stores[store.Id] = store;
+        // Relative URI — the base address came from configuration at registration.
+        var response = await geocodingClient.GetAsync(
+            $"search?q={Uri.EscapeDataString(request.Address)}&format=json&limit=1",
+            cancellationToken);
 
-    return Results.Created($"/stores/{store.Id}", store);
+        // A 403 from a missing User-Agent throws here, reaching
+        // GlobalExceptionHandler exactly like the /boom endpoint does. Phase 3
+        // already built the error path; this phase adds a real way to trigger it.
+        response.EnsureSuccessStatusCode();
+
+        var matches = await response.Content
+            .ReadFromJsonAsync<GeocodingMatch[]>(cancellationToken) ?? [];
+
+        // Distinguishes "no match" from "matched something" without storing the
+        // response body on the span.
+        activity?.SetTag("geocode.match_count", matches.Length);
+
+        // Nominatim answers an unresolvable address with an empty array and HTTP
+        // 200, so this is a success status that is not a success.
+        if (matches.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"No coordinates found for address '{request.Address}'.");
+        }
+
+        // Coordinates arrive as strings. InvariantCulture is not optional — under a
+        // comma-decimal locale double.Parse would read "52.5170365" as 525170365.
+        var latitude = double.Parse(matches[0].Lat, CultureInfo.InvariantCulture);
+        var longitude = double.Parse(matches[0].Lon, CultureInfo.InvariantCulture);
+
+        var store = new Store(
+            Guid.NewGuid(),
+            request.Name,
+            request.Address,
+            latitude,
+            longitude,
+            DateTimeOffset.UtcNow);
+
+        // The id only exists once the store does, so it cannot be set earlier.
+        activity?.SetTag("store.id", store.Id);
+
+        // Set here rather than in EnrichWithHttpResponseMessage: these values come
+        // from the response body, and reading the content stream inside that
+        // synchronous callback would interfere with this code reading it properly.
+        activity?.SetTag("geocode.latitude", latitude);
+        activity?.SetTag("geocode.longitude", longitude);
+
+        stores[store.Id] = store;
+
+        return Results.Created($"/stores/{store.Id}", store);
+    }
+    catch (Exception ex)
+    {
+        // Mark CreateStore itself as failed. Without this the exception leaves
+        // the `using` scope, CreateStore is disposed with status Unset, and by
+        // the time GlobalExceptionHandler reads Activity.Current it is back on
+        // the request span — so the error and store.address end up on different
+        // spans, and "failed spans for this address" finds nothing.
+        //
+        // Status and error.type only, no AddException. The semantic conventions
+        // say a propagated exception is recorded once; GlobalExceptionHandler
+        // already does that at the boundary that handles it.
+        // https://opentelemetry.io/docs/specs/semconv/general/recording-errors/
+        activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+        activity?.SetTag("error.type", ex.GetType().FullName);
+
+        // `throw;`, not `throw ex;` — the bare form keeps the original stack
+        // trace, which is what the handler records.
+        throw;
+    }
 });
 
 app.MapGet("/stores/{id:guid}", (Guid id, ConcurrentDictionary<Guid, Store> stores) =>
