@@ -77,9 +77,9 @@ flowchart TD
         direction TB
         A["POST /stores · SERVER<br/>─────────────<br/>http.request.method = POST<br/>http.route = /stores<br/>http.response.status_code = 201"]
 
-        B["CreateStore · INTERNAL<br/>─────────────<br/>store.id<br/>store.name<br/>store.address ← set by us"]
+        B["CreateStore · INTERNAL<br/>─────────────<br/>store.id<br/>store.name<br/>store.address ← set by us<br/>geocode.latitude ← set by us<br/>geocode.longitude ← set by us<br/>geocode.match_count ← set by us<br/>error.type — only on failure"]
 
-        C["GET /search · CLIENT<br/>─────────────<br/>http.request.method = GET<br/>server.address = nominatim.openstreetmap.org<br/>server.port = 443<br/>url.full = ...?q=*<br/>http.response.status_code = 200<br/>network.protocol.version = 1.1<br/>error.type — only on failure<br/>─────────────<br/>geocode.latitude ← set by us<br/>geocode.longitude ← set by us<br/>geocode.match_count ← set by us"]
+        C["GET /search · CLIENT<br/>─────────────<br/>http.request.method = GET<br/>server.address = nominatim.openstreetmap.org<br/>server.port = 443<br/>url.full = ...?q=*<br/>http.response.status_code = 200<br/>network.protocol.version = 1.1<br/>http.client.name ← set by enrichment<br/>error.type — only on failure"]
 
         A --> B --> C
     end
@@ -336,12 +336,57 @@ ownership.
 
 ---
 
+## Fix: the error belongs on the span that failed
+
+Added after phase 6 merged, from a review of the finished phase.
+
+As first built, a failed `POST /stores` produced this:
+
+```
+POST /stores   SERVER    Error   ← exception recorded here
+└─ CreateStore INTERNAL  Unset   ← store.address is here
+```
+
+The cause is phase 3's ambient context, approached from a new direction. The
+exception leaves `CreateStore`'s `using` scope, which disposes the activity, and
+disposing an activity sets `Activity.Current` back to its parent. By the time
+`UseExceptionHandler` runs `GlobalExceptionHandler`, the current activity is the
+request span. Phase 3 never showed this because `/boom` has no child span.
+
+The failing input and the error sat on different spans, so a query for *failed
+spans where `store.address` is X* found nothing — which is problem 2 from the
+spec, unsolved.
+
+The fix is a `catch` inside the `using` block that sets `CreateStore`'s status to
+`Error`, sets `error.type`, and rethrows. It deliberately does **not** call
+`AddException`. The
+[semantic conventions on recording errors](https://opentelemetry.io/docs/specs/semconv/general/recording-errors/)
+say each failed span should carry an `Error` status and `error.type`, but that a
+propagated exception should be recorded once: *"It's NOT RECOMMENDED to record
+the same exception more than once."* `GlobalExceptionHandler` already records it,
+at the boundary that handles it.
+
+`store.name` also moved above the call, next to `store.address`, so a failed span
+carries the whole payload. `store.id` cannot move: it does not exist until the
+store does.
+
+```
+POST /stores   SERVER    Error   exception event (once, by the handler)
+└─ CreateStore INTERNAL  Error   error.type, store.name, store.address
+   └─ GET /search CLIENT  Error only on a 403 (set by the library)
+```
+
+The rule: **every span says whether it failed; one span records the exception.**
+
+---
+
 ## Verify
 
 1. `POST /stores` with a resolvable address → `201`, coordinates populated, and a
    trace whose waterfall is dominated by the Nominatim client span.
-2. `POST /stores` with nonsense → the empty-array path fails the request, and the
-   error is visible on the StoreApi spans.
+2. `POST /stores` with nonsense → the empty-array path fails the request.
+   `CreateStore` shows status `Error` with `error.type` and both `store.*`
+   attributes; the exception event appears once, on the request span.
 3. Remove the configured `User-Agent`, or send the same URL from Postman with its
    default → client span tagged `http.response.status_code: 403`.
 4. Compare the `traceparent` response header against the trace id in Better
