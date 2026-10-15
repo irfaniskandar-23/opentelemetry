@@ -84,23 +84,11 @@ material and has abandoned similar projects before through feeling overwhelmed.
 
 ## Check the official docs first
 
-Before implementing anything, look it up in the official documentation. Do not
-work from memory. APIs change, and a confident wrong answer costs more here than
-a slow right one.
+Look it up before implementing. Do not work from memory.
 
-- **Microsoft concepts** (.NET, ASP.NET Core, `Activity`, `HttpClient`, Azure):
-  use the **microsoft-docs plugin**, never a manual WebFetch. Invoke its skills —
-  `microsoft-docs:microsoft-docs` for concepts,
-  `microsoft-docs:microsoft-code-reference` for APIs and code — which search
-  Microsoft Learn through the `microsoft-learn` MCP server. Start with
-  [.NET distributed tracing](https://learn.microsoft.com/dotnet/core/diagnostics/distributed-tracing).
-- **OpenTelemetry concepts**: use the .NET section of the OpenTelemetry docs —
-  <https://opentelemetry.io/docs/languages/dotnet/>. For attribute names and
-  error rules, use the
-  [semantic conventions](https://opentelemetry.io/docs/specs/semconv/).
-- **Always give the link** to the page relied on in the response, so the owner
-  can read the source.
-- If the docs and existing code disagree, say so rather than silently picking one.
+- **.NET concepts:** load the microsoft-docs plugin.
+- **OpenTelemetry concepts:** use <https://opentelemetry.io/docs/languages/dotnet/>.
+- **Always give the link** to the page used.
 
 ## The domain
 
