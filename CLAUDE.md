@@ -40,12 +40,11 @@ failed, and the call made to an outside service (Nominatim, which turns an
 address into map coordinates). Every trace is sent to Better Stack. Every
 response hands the caller a `traceparent` header they can quote in a bug report.
 
-**Next, in order:**
+When creating a store fails, the error is marked on the same span that holds the
+store's name and address, so "failed requests for this address" is a single
+search.
 
-1. A small fix to phase 6: when `POST /stores` fails, the error is recorded on
-   the request span rather than on the `CreateStore` span that holds the store's
-   address. A design exists in conversation and is awaiting approval.
-2. Phase 7, logs and trace correlation.
+**Next:** phase 7, logs and trace correlation.
 
 The technical detail of each phase is in its note under `docs/`. Update this
 section in every phase's PR. Keep it short and in plain language.
