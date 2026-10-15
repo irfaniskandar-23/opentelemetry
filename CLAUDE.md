@@ -89,7 +89,10 @@ work from memory. APIs change, and a confident wrong answer costs more here than
 a slow right one.
 
 - **Microsoft concepts** (.NET, ASP.NET Core, `Activity`, `HttpClient`, Azure):
-  use Microsoft Learn — <https://learn.microsoft.com/dotnet/>. Start with
+  use the **microsoft-docs plugin**, never a manual WebFetch. Invoke its skills —
+  `microsoft-docs:microsoft-docs` for concepts,
+  `microsoft-docs:microsoft-code-reference` for APIs and code — which search
+  Microsoft Learn through the `microsoft-learn` MCP server. Start with
   [.NET distributed tracing](https://learn.microsoft.com/dotnet/core/diagnostics/distributed-tracing).
 - **OpenTelemetry concepts**: use the .NET section of the OpenTelemetry docs —
   <https://opentelemetry.io/docs/languages/dotnet/>. For attribute names and
