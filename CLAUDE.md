@@ -34,7 +34,7 @@ That spec is the source of truth. Read it before proposing work.
 
 ## Where we are now
 
-**Phases 1 to 6 are done.** A small store API records a trace for every
+**Phases 1 to 7 are done.** A small store API records a trace for every
 request. Each trace shows which store it involved, what went wrong if anything
 failed, and the call made to an outside service (Nominatim, which turns an
 address into map coordinates). Every trace is sent to Better Stack. Every
@@ -44,7 +44,12 @@ When creating a store fails, the error is marked on the same span that holds the
 store's name and address, so "failed requests for this address" is a single
 search.
 
-**Next:** phase 7, logs and trace correlation.
+Log messages are also sent to Better Stack. They stay generic ("Store not
+found"); the store ID lives on the trace, and each log line is linked to its
+trace automatically. Every trace and log line also says which environment and
+which machine it came from.
+
+**Next:** phase 8, deploying the API to Azure App Service.
 
 The technical detail of each phase is in its note under `docs/`. Update this
 section in every phase's PR. Keep it short and in plain language.
@@ -59,7 +64,7 @@ section in every phase's PR. Keep it short and in plain language.
 | 4 | `traceparent` on the response | W3C Trace Context, header format | Done |
 | 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Done |
 | 6 | The network hop | Automatic client spans and `traceparent` injection | Done |
-| 7 | Logs and trace correlation | Generic messages, structured properties | Not started |
+| 7 | Logs and trace correlation | Generic messages, structured properties | Done |
 
 **Later, not yet designed:** a real database (SQL Server), deployment to Azure
 App Service, and automated deployment (CI/CD). Each will be its own phase, added
