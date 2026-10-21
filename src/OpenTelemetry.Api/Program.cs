@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using OpenTelemetry.Exporter;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
@@ -65,7 +66,15 @@ builder.Services.AddOpenTelemetry()
         // A resource attribute, not a span tag: it describes the process, not
         // the request, and it is what keeps laptop traffic distinguishable from
         // real traffic when both export to the same source.
-        .AddAttributes([new("deployment.environment.name", builder.Environment.EnvironmentName)]))
+        //
+        // host.name answers "which machine": the same environment can run on
+        // more than one, and a laptop and a cloud instance can both report
+        // Production. The convention reserves the host.* namespace for resource
+        // attributes, which is why this is not an enricher on each span.
+        // https://opentelemetry.io/docs/specs/semconv/resource/host/
+        .AddAttributes([
+            new("deployment.environment.name", builder.Environment.EnvironmentName),
+            new("host.name", Environment.MachineName)]))
     .WithTracing(tracing => tracing
        // This is the SDK's ShouldListenTo, expressed as builder calls. The
        // hand-written listener deleted in this phase made the same decision
@@ -128,6 +137,26 @@ builder.Services.AddOpenTelemetry()
 
             // The source token, sent as a normal HTTP header. Note the format:
             // a comma-separated "key=value" string, not a dictionary.
+            options.Headers = $"Authorization=Bearer {betterStackToken}";
+        }))
+
+    // A second pipeline, not an extension of the first. WithTracing never
+    // touched ILogger, which is why phase 7's logs reached the terminal but not
+    // Better Stack.
+    //
+    // This adds an ILogger provider beside the built-in Console one — no
+    // ClearProviders — so every log call now goes to both. The provider stamps
+    // each record with TraceId and SpanId from Activity.Current; there is no
+    // correlation code anywhere, and that is the point of this phase.
+    // https://opentelemetry.io/docs/languages/dotnet/logs/correlation/
+    .WithLogging(logging => logging
+        .AddOtlpExporter(options =>
+        {
+            // Same source, same token, same transport as traces. Only the
+            // signal path differs, and with AddOtlpExporter the SDK does not
+            // append it, so it must be written in full.
+            options.Endpoint = new Uri($"{betterStackEndpoint}/v1/logs");
+            options.Protocol = OtlpExportProtocol.HttpProtobuf;
             options.Headers = $"Authorization=Bearer {betterStackToken}";
         }));
 
@@ -270,10 +299,34 @@ app.MapPost("/stores", async (
     }
 });
 
-app.MapGet("/stores/{id:guid}", (Guid id, ConcurrentDictionary<Guid, Store> stores) =>
-    stores.TryGetValue(id, out var store)
-        ? Results.Ok(store)
-        : Results.NotFound());
+// ILogger<Program> is already registered by CreateBuilder, the same way
+// IHttpClientFactory is. <Program> is the category — the name printed beside
+// each line in the terminal.
+app.MapGet("/stores/{id:guid}", (
+    Guid id,
+    ConcurrentDictionary<Guid, Store> stores,
+    ILogger<Program> logger) =>
+{
+    // No child span here, so Activity.Current is ASP.NET Core's request span.
+    // Tagging it is the phase 2 technique on an existing span: without this the
+    // id lives only inside url.path, and "filter traces by store.id" finds
+    // nothing for reads.
+    Activity.Current?.SetTag("store.id", id);
+
+    // Generic messages on purpose: no {StoreId}. Identity is on the span; the
+    // trace ID the logging provider copies from Activity.Current is what joins
+    // these lines to it.
+    if (stores.TryGetValue(id, out var store))
+    {
+        logger.LogInformation("Store found");
+        return Results.Ok(store);
+    }
+
+    // A failure with no exception — nothing marks the span as an error, so this
+    // line is the only record of why the 404 happened.
+    logger.LogWarning("Store not found");
+    return Results.NotFound();
+});
 
 app.MapGet("/stores", (ConcurrentDictionary<Guid, Store> stores) => stores.Values);
 
