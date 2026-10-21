@@ -297,16 +297,19 @@ alongside it.
 
 **Question answered:** what does it take for this app to run in the cloud, and
 does its trace still reach Better Stack from there?
-**Dependencies added:** none. No change to `Program.cs` is expected — the code
+**Dependencies added:** none. No change to `Program.cs` is expected — phase 7's
+logging pipeline and `host.name` are already on `main`, and the code
 already reads every value from configuration, and that is what makes it
 deployable.
 
 **Who does what.** This phase is different in kind: the owner performs every
-step by hand, from creating the resources to uploading the code. Claude explains
-each step before it is taken and verifies the result afterwards with read-only
-Azure CLI queries. Claude creates, changes and deploys nothing. Creating the
-resources in the portal for the first time is the point; scripting them is not
-part of this phase.
+Azure step by hand, from creating the resources to uploading the code and
+setting app settings. Claude explains each step before it is taken and verifies
+the result afterwards with read-only Azure CLI queries; Claude creates, changes
+and deploys nothing in Azure. Creating the resources in the portal for the first
+time is the point; scripting them is not part of this phase. Repository work —
+the phase note, the `.http` variable, `.gitignore`, `CLAUDE.md`, the PR — is
+Claude's, as in earlier phases.
 
 **Account state at design time.** The Azure subscription was upgraded from the
 free account to pay-as-you-go. A budget, `lab-budget`, is set at 1 USD a month
@@ -350,7 +353,8 @@ defaults, and several of them would either cost money or leak a later phase:
 3. `az webapp deploy --resource-group <rg> --name <app> --src-path app.zip --type zip`.
    App Service unpacks it into `/home/site/wwwroot` and restarts the app.
 
-`publish/` and `app.zip` are build output and must never be committed.
+`publish/` and `app.zip` are build output and must never be committed;
+`.gitignore` already covers `publish/` and gains `app.zip`.
 
 **The deliberate first failure.** The first deploy is made *without* the Better
 Stack token. `Program.cs` throws at startup when `BetterStack:SourceToken` is
@@ -385,10 +389,22 @@ expected behaviour to observe, not bugs to fix.
    `DOTNETCORE|10.0` and is `Running`, and `lab-budget` still shows 0 spend.
 2. `GET /stores` on the live URL returns `[]` with a `traceparent` header.
 3. That trace ID finds the trace in Better Stack, under service `store-api`,
-   with `deployment.environment.name = Production`.
-4. `GET /stores/{id}/boom` on the live URL returns ProblemDetails and an error
+   with `deployment.environment.name = Production` and a `host.name` that is
+   the App Service instance, not the laptop.
+4. `GET /stores/{id}` with an unknown id on the live URL produces a trace whose
+   `Store not found` warning appears beside it — phase 7's correlation, from
+   the cloud.
+5. **`client.address`, observed.** The request enricher tags each span with
+   `RemoteIpAddress`. Behind App Service's load balancer that may be the
+   balancer's address rather than the caller's, depending on whether forwarded
+   headers are applied. The value the cloud traces actually carry is recorded,
+   with no code change. The note also records the privacy trade-off: on a public
+   URL this is third parties' IP addresses, a searchable attribute, sent to a
+   third-party service — the convention lists it as Recommended, but keeping it
+   is a decision, not a default.
+6. `GET /stores/{id}/boom` on the live URL returns ProblemDetails and an error
    trace, as it does locally.
-5. `POST /stores` with a known address produces a trace with the Nominatim
+7. `POST /stores` with a known address produces a trace with the Nominatim
    client span. If Nominatim rejects or throttles requests from Azure's shared
    outbound addresses, that is recorded as a finding — the trace of the failure
    is itself the evidence, which is phase 6's lesson arriving unprompted.
@@ -402,8 +418,9 @@ the same Web App.
 **Note covers:** resource group, plan and app, and why the tier lives on the
 plan; the publish folder as the deployable unit, versus the repository; app
 settings as configuration from outside the code, and the `__` rule; reading a
-startup failure from the log stream; the environment resource attribute; free
-tier limits and cold starts.
+startup failure from the log stream; the environment and host resource
+attributes; what a load balancer does to the caller's address, and the privacy
+cost of recording it; free tier limits and cold starts.
 
 **Out of scope for this phase:** CI/CD; creating resources from the CLI or as
 infrastructure code; custom domains and certificates; Key Vault; Application
