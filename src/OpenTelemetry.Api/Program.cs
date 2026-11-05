@@ -335,6 +335,11 @@ app.MapGet("/stores", (ConcurrentDictionary<Guid, Store> stores) => stores.Value
 // type, so overload resolution picks MapGet(string, RequestDelegate) instead.
 app.MapGet("/stores/{id:guid}/boom", (Guid id) =>
 {
+    // Same technique as GET /stores/{id}: put the id on the request span, set
+    // before the throw so the failed span carries it. Without this the id lives
+    // only inside url.path and the exception message — text, not a filter.
+    Activity.Current?.SetTag("store.id", id);
+
     throw new InvalidOperationException($"Deliberate failure for store {id}.");
 });
 
