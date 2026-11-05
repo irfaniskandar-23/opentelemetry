@@ -9,10 +9,6 @@ using OpenTelemetry.Trace;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddConfiguration();
 
-// Named once because three places need it: the registration, the resolve, and
-// the enrichment hook that stamps it on the client span.
-const string GeocodingClientName = "Geocoding";
-
 builder.Services.AddSingleton<ConcurrentDictionary<Guid, Store>>();
 
 // AddProblemDetails registers the service that writes RFC 9457 bodies; without
@@ -33,24 +29,7 @@ var betterStackEndpoint = builder.Configuration["BetterStack:Endpoint"]
 var betterStackToken = builder.Configuration["BetterStack:SourceToken"]
     ?? throw new InvalidOperationException("BetterStack:SourceToken is not configured. Set it with dotnet user-secrets.");
 
-// Nominatim needs no credential, so both values live in appsettings.json.
-var geocodingBaseUrl = builder.Configuration["Geocoding:BaseUrl"]
-    ?? throw new InvalidOperationException("Geocoding:BaseUrl is not configured.");
-var geocodingUserAgent = builder.Configuration["Geocoding:UserAgent"]
-    ?? throw new InvalidOperationException("Geocoding:UserAgent is not configured.");
-
-// A named client, not `new HttpClient()`. The tracing reason is that this is
-// where instrumentation expects to find outbound calls; the more important
-// reason is that IHttpClientFactory pools and recycles the handler underneath,
-// which is what prevents socket exhaustion and stale DNS.
-//
-// The User-Agent is not politeness. Nominatim answers 403 to generic clients —
-// Postman's default is blocked — so without this line every call fails.
-builder.Services.AddHttpClient(GeocodingClientName, client =>
-{
-    client.BaseAddress = new Uri(geocodingBaseUrl);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd(geocodingUserAgent);
-});
+builder.Services.AddGeocoding();
 
 builder.Services.AddOpenTelemetry()
     // The Resource answers "who is reporting", and its attributes are attached
@@ -120,7 +99,7 @@ builder.Services.AddOpenTelemetry()
             // Only runs when the activity is sampled — an enricher that looks
             // dead is usually attached to an unsampled span.
             options.EnrichWithHttpRequestMessage = (activity, _) =>
-                activity.SetTag("http.client.name", GeocodingClientName);
+                activity.SetTag("http.client.name", GeocodingExtensions.ClientName);
         })
 
         .AddOtlpExporter(options =>
@@ -226,7 +205,7 @@ app.MapPost("/stores", async (
 
     try
     {
-        var geocodingClient = httpClientFactory.CreateClient(GeocodingClientName);
+        var geocodingClient = httpClientFactory.CreateClient(GeocodingExtensions.ClientName);
 
         // Relative URI — the base address came from configuration at registration.
         var response = await geocodingClient.GetAsync(
