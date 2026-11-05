@@ -338,7 +338,7 @@ defaults, and several of them would either cost money or leak a later phase:
 | Tab | Must read | Why |
 |---|---|---|
 | Basics | Pricing plan **Free F1**, OS **Linux**, runtime **.NET 10** | Defaults are often a paid tier. Microsoft's own .NET quickstart uses `P0v3`, which is paid. |
-| Deployment | Continuous deployment **Disabled** | That switch is phase 9. |
+| Deployment | Continuous deployment **Disabled** | That switch is phase 10. |
 | Monitoring | Application Insights **No** | A second telemetry pipeline would compete with the one being taught, and it is a separate billable resource. |
 
 **Getting the code there.** Built locally, uploaded by hand:
@@ -412,7 +412,7 @@ expected behaviour to observe, not bugs to fix.
 The `.http` file gains a variable for the live host so the same requests run
 against either target.
 
-**End state.** The resources stay running after this phase. Phase 9 deploys to
+**End state.** The resources stay running after this phase. Phase 10 deploys to
 the same Web App.
 
 **Note covers:** resource group, plan and app, and why the tier lives on the
@@ -426,9 +426,21 @@ cost of recording it; free tier limits and cold starts.
 infrastructure code; custom domains and certificates; Key Vault; Application
 Insights; scaling; any database.
 
-### Phase 9 — Automated deployment (CI/CD)
+### Phase 9 — Noticing failures
 
-*Planned, not yet designed.* Direction agreed on 2026-10-21: a GitHub Actions
+*Planned, not yet designed.* Direction agreed on 2026-11-05: Better Stack turns
+failed requests into a notification and a summary, using only data the app
+already sends, through features already in Better Stack: a chart of failed
+spans, an alert on that chart, the incident the alert opens (email by default),
+and a post-mortem written on the incident. AI SRE is out of scope; it attaches to
+the same chain later. First change agreed: `GlobalExceptionHandler` sets
+`error.type` on the request span, which the HTTP semantic conventions make
+Conditionally Required when a request ends in error. This section is completed
+when the phase is designed.
+
+### Phase 10 — Automated deployment (CI/CD)
+
+*Planned, not yet designed. Numbered 9 until 2026-11-05.* Direction agreed on 2026-10-21: a GitHub Actions
 workflow deploys to the phase 8 Web App when a PR is merged into `main` — not
 when it is approved, since approval does not put code on `main`. GitHub proves
 its identity to Azure through OpenID Connect rather than a stored password. The

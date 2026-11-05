@@ -34,7 +34,7 @@ That spec is the source of truth. Read it before proposing work.
 
 ## Where we are now
 
-**Phases 1 to 7 are done.** A small store API records a trace for every
+**Phases 1 to 8 are done.** A small store API records a trace for every
 request. Each trace shows which store it involved, what went wrong if anything
 failed, and the call made to an outside service (Nominatim, which turns an
 address into map coordinates). Every trace is sent to Better Stack. Every
@@ -49,7 +49,14 @@ found"); the store ID lives on the trace, and each log line is linked to its
 trace automatically. Every trace and log line also says which environment and
 which machine it came from.
 
-**Next:** phase 8, deploying the API to Azure App Service.
+The API also runs in the cloud, on Azure App Service's free tier. Its traces
+reach Better Stack from there too, marked `Production` and naming the Azure
+machine, so laptop and cloud traces never get mixed up.
+
+**Next:** phase 9, noticing failures. Better Stack should tell us when requests
+fail and summarise what went wrong, using the data the app already sends. The
+first agreed change: the error handler labels each failed request span with
+`error.type`. Design in progress.
 
 The technical detail of each phase is in its note under `docs/`. Update this
 section in every phase's PR. Keep it short and in plain language.
@@ -65,10 +72,12 @@ section in every phase's PR. Keep it short and in plain language.
 | 5 | OpenTelemetry SDK and Better Stack | Exporting via OTLP | Done |
 | 6 | The network hop | Automatic client spans and `traceparent` injection | Done |
 | 7 | Logs and trace correlation | Generic messages, structured properties | Done |
+| 8 | Deploy to Azure App Service | Plan and app, app settings, free tier limits | Done |
+| 9 | Noticing failures | `error.type`, Better Stack alerts and incidents | In design |
+| 10 | Automated deployment (CI/CD) | GitHub Actions deploying on merge | Planned |
 
-**Later, not yet designed:** a real database (SQL Server), deployment to Azure
-App Service, and automated deployment (CI/CD). Each will be its own phase, added
-to the spec only when it is designed.
+**Later, not yet designed:** a real database (SQL Server). It will be its own
+phase, added to the spec only when it is designed.
 
 ## Working agreement
 
