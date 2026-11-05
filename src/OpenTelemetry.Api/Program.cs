@@ -1,10 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
-using OpenTelemetry.Exporter;
-using OpenTelemetry.Logs;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddConfiguration();
@@ -16,129 +12,8 @@ builder.Services.AddSingleton<ConcurrentDictionary<Guid, Store>>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-// The endpoint is not a credential and lives in appsettings.json; the token is
-// one and lives in user secrets. Both arrive through the same Configuration
-// object, which is the point — code never knows which layer answered.
-//
-// Throwing on a missing value is deliberate. A null token would produce an
-// Authorization header of "Bearer ", a 401 inside the exporter's background
-// thread, and no visible failure anywhere — the app would look healthy and
-// export nothing.
-var betterStackEndpoint = builder.Configuration["BetterStack:Endpoint"]
-    ?? throw new InvalidOperationException("BetterStack:Endpoint is not configured.");
-var betterStackToken = builder.Configuration["BetterStack:SourceToken"]
-    ?? throw new InvalidOperationException("BetterStack:SourceToken is not configured. Set it with dotnet user-secrets.");
-
 builder.Services.AddGeocoding();
-
-builder.Services.AddOpenTelemetry()
-    // The Resource answers "who is reporting", and its attributes are attached
-    // to every span this process exports. Without AddService the spans arrive
-    // as "unknown_service:OpenTelemetry.Api" and cannot be filtered by service. 
-    .ConfigureResource(resource => resource
-        .AddService("store-api")
-
-        // Which environment this process is. Read from ASPNETCORE_ENVIRONMENT,
-        // which launchSettings.json sets to Development locally and which a host
-        // like Azure App Service supplies as an application setting. Unset means
-        // Production, deliberately — the safe default.
-        //
-        // A resource attribute, not a span tag: it describes the process, not
-        // the request, and it is what keeps laptop traffic distinguishable from
-        // real traffic when both export to the same source.
-        //
-        // host.name answers "which machine": the same environment can run on
-        // more than one, and a laptop and a cloud instance can both report
-        // Production. The convention reserves the host.* namespace for resource
-        // attributes, which is why this is not an enricher on each span.
-        // https://opentelemetry.io/docs/specs/semconv/resource/host/
-        .AddAttributes([
-            new("deployment.environment.name", builder.Environment.EnvironmentName),
-            new("host.name", Environment.MachineName)]))
-    .WithTracing(tracing => tracing
-       // This is the SDK's ShouldListenTo, expressed as builder calls. The
-       // hand-written listener deleted in this phase made the same decision
-       // with a lambda; see docs/phase-1-activity.md.
-       //
-       // AddSource is not optional for the same reason it was not optional
-       // there: an ActivitySource nobody subscribed to produces nothing, so
-       // omitting this line silently drops every CreateStore span while
-       // ASP.NET Core's request spans keep arriving — the most confusing
-       // possible half-working state.
-       .AddSource(Telemetry.SourceName) //root span
-
-        // ASP.NET Core already emits a per-request Activity with zero packages;
-        // phase 1 proved that. This subscribes to it and renames its data to
-        // the OpenTelemetry semantic conventions (http.request.method, url.path)
-        // that backends actually understand.
-        .AddAspNetCoreInstrumentation(options =>
-        {
-            //Enrinchment hook
-            options.EnrichWithHttpRequest = (activity, request) =>
-            {
-                activity.SetTag("http.request.body.size", request.ContentLength);
-                activity.SetTag("http.request.header.content_type", request.ContentType);
-                activity.SetTag("url.query", request.QueryString.Value);
-                activity.SetTag("client.address", request.HttpContext.Connection.RemoteIpAddress?.ToString());
-            };
-        })
-
-        // The whole of phase 6, in one line. It creates the CLIENT span for
-        // every outgoing HttpClient call and writes the traceparent header onto
-        // the request — no propagation code anywhere in this file.
-        //
-        // On .NET 9+ the runtime already emits this activity from its own
-        // System.Net.Http source; the package still earns its place for context
-        // propagation plus the enrichment and filtering hooks below.
-        .AddHttpClientInstrumentation(options =>
-        {
-            // Which registered client made the call. The semantic conventions
-            // describe the wire (server.address, url.full) but not our own
-            // naming, so this is exactly the kind of gap enrichment is for.
-            //
-            // Only runs when the activity is sampled — an enricher that looks
-            // dead is usually attached to an unsampled span.
-            options.EnrichWithHttpRequestMessage = (activity, _) =>
-                activity.SetTag("http.client.name", GeocodingExtensions.ClientName);
-        })
-
-        .AddOtlpExporter(options =>
-        {
-            // Better Stack ingests traces at /v1/traces on the source's host.
-            // The SDK would append that path itself, but writing it out means
-            // the full destination is visible here rather than implied.
-            options.Endpoint = new Uri($"{betterStackEndpoint}/v1/traces");
-
-            // Two OTLP transports exist: gRPC and HTTP/protobuf. Better Stack
-            // takes the HTTP one, and the default in this SDK is gRPC — so
-            // leaving this out fails at the transport level, not with a
-            // helpful message about the wrong protocol.
-            options.Protocol = OtlpExportProtocol.HttpProtobuf;
-
-            // The source token, sent as a normal HTTP header. Note the format:
-            // a comma-separated "key=value" string, not a dictionary.
-            options.Headers = $"Authorization=Bearer {betterStackToken}";
-        }))
-
-    // A second pipeline, not an extension of the first. WithTracing never
-    // touched ILogger, which is why phase 7's logs reached the terminal but not
-    // Better Stack.
-    //
-    // This adds an ILogger provider beside the built-in Console one — no
-    // ClearProviders — so every log call now goes to both. The provider stamps
-    // each record with TraceId and SpanId from Activity.Current; there is no
-    // correlation code anywhere, and that is the point of this phase.
-    // https://opentelemetry.io/docs/languages/dotnet/logs/correlation/
-    .WithLogging(logging => logging
-        .AddOtlpExporter(options =>
-        {
-            // Same source, same token, same transport as traces. Only the
-            // signal path differs, and with AddOtlpExporter the SDK does not
-            // append it, so it must be written in full.
-            options.Endpoint = new Uri($"{betterStackEndpoint}/v1/logs");
-            options.Protocol = OtlpExportProtocol.HttpProtobuf;
-            options.Headers = $"Authorization=Bearer {betterStackToken}";
-        }));
+builder.Services.AddObservability(builder.Environment);
 
 var app = builder.Build();
 
