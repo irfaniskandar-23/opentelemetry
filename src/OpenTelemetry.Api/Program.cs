@@ -343,6 +343,16 @@ app.MapGet("/stores/{id:guid}/boom", (Guid id) =>
     throw new InvalidOperationException($"Deliberate failure for store {id}.");
 });
 
+app.MapGet("/simulate", (Guid id) =>
+{
+    // Same technique as GET /stores/{id}: put the id on the request span, set
+    // before the throw so the failed span carries it. Without this the id lives
+    // only inside url.path and the exception message — text, not a filter.
+    Activity.Current?.SetTag("store.id", id);
+
+    throw new InvalidOperationException($"Deliberate failure for store {id}.");
+});
+
 app.Run();
 
 record Store(
