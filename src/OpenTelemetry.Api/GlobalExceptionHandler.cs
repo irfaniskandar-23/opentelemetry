@@ -8,6 +8,16 @@ internal sealed class GlobalExceptionHandler(IProblemDetailsService problemDetai
     {
         var activity = Activity.Current;
         activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+
+        // The label on the failed span: same value for every failure of this
+        // kind, so failures can be grouped and counted. The message above is
+        // unique per failure; this is not. Required by the HTTP conventions when
+        // a request ends in error, and nobody else sets it here — the ASP.NET
+        // Core instrumentation's exception hooks never see an exception that
+        // UseExceptionHandler has already caught.
+        // https://opentelemetry.io/docs/specs/semconv/http/http-spans/
+        activity?.SetTag("error.type", exception.GetType().FullName);
+
         activity?.AddException(exception);
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
