@@ -18,6 +18,7 @@ Applies to C#, `.csproj` (`<!-- -->`) and `.http` (`#`) files. Same purpose and 
 - Under 20 words per comment.
 - Every `Add...`/`Use...` extension method gets a one-line `<summary>` stating its purpose (it is what hovering the call in `Program.cs` shows). Other members get one only when something is not obvious.
 - A hook blocks whole-line `//` comments in `.cs` edits. Trailing comments (`x(); // ...`) are not caught by the hook but are still forbidden.
+- The rules apply however a file is changed; the hook only sees Edit/Write, not shell edits.
 
 ## Example
 

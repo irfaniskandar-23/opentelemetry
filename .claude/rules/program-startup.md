@@ -10,7 +10,7 @@ paths:
 ## Adding wiring
 
 - New service registrations go in an `Add{Group}` extension on `IServiceCollection` (namespace `Microsoft.Extensions.DependencyInjection`).
-- New middleware or endpoint mapping goes in a `Use{Group}` extension on `IApplicationBuilder` (namespace `Microsoft.AspNetCore.Builder`).
+- New middleware goes in a `Use{Group}` extension on `IApplicationBuilder` (namespace `Microsoft.AspNetCore.Builder`).
 - One file per responsibility in `src/OpenTelemetry.Api/Extensions/`, each with a one-line `<summary>`.
 - One-line framework registrations such as `AddProblemDetails` and `AddControllers` may stay as direct calls.
 - Settings: see `configuration.md`. Endpoints: see `controllers.md`.
@@ -22,7 +22,7 @@ Middleware order matters. `UseExceptionHandler()` comes first so it wraps everyt
 ## Never
 
 - Put logic, lambdas or comments in `Program.cs`.
-- Add a new extension for something that is not wiring. Report it instead.
+- Move logic or settings into an extension; extensions only register services or middleware.
 
 ## Links
 

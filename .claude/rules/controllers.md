@@ -18,6 +18,7 @@ Every HTTP endpoint is an action on a controller. `Program.cs` stays a table of 
 
 - Add `app.MapGet`, `app.MapPost` or any other `app.Map{Verb}` endpoint. `app.MapControllers()` is the only mapping call.
 - Put endpoint logic in `Program.cs`.
+- Add a namespace; types stay in the global namespace. Comments follow `comments.md` (XML docs only; a hook blocks `//`).
 - Rewrite span names or `http.route` in code to hide a routing change. Report the change instead.
 
 ## Telemetry
