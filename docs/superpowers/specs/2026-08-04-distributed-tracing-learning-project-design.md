@@ -36,8 +36,11 @@ These constrain every phase and override any instinct to build more:
 
 ## Architecture
 
-A single ASP.NET Core minimal API throughout. The network hop in phase 6 is a
-call to a third-party service, so no second project is ever created.
+A single ASP.NET Core web API throughout. Its endpoints were minimal API through
+phase 8 and live in a controller since the 2026-11-05 refactor (see
+[the refactor design](2026-11-05-program-startup-refactor-design.md)). The
+network hop in phase 6 is a call to a third-party service, so no second project
+is ever created.
 
 ```
 src/
