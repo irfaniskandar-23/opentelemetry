@@ -4,5 +4,19 @@
       "WebFetch(domain:www.w3.org)",
       "WebFetch(domain:opentelemetry.io)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": ["-NoProfile", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-line-comments.ps1"]
+          }
+        ]
+      }
+    ]
   }
 }
