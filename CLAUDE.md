@@ -54,11 +54,14 @@ reach Better Stack from there too, marked `Production` and naming the Azure
 machine, so laptop and cloud traces never get mixed up.
 
 `Program.cs` has been reorganised into a short list of calls, with settings,
-telemetry, the geocoding client and the endpoints each in their own file. Three
-small things changed in what the app sends: request span names lost their
-leading slash (`POST stores` instead of `POST /stores`), the "Store found" and
-"Store not found" logs now come from `StoresController`, and a request for an
-unknown store now gets an error body instead of an empty 404.
+telemetry, the geocoding client and the endpoints each in their own file. Four
+small things changed:
+
+- Request span names lost their leading slash (`POST stores`, not `POST /stores`).
+- The "Store found" and "Store not found" logs now come from `StoresController`.
+- An unknown store still gets a 404, now with an error message in the body.
+- A create request with missing fields or broken JSON now gets a 400 before any
+  work starts, so it no longer shows up as a failed span.
 
 **Next:** phase 9, noticing failures. Better Stack should tell us when requests
 fail and summarise what went wrong, using the data the app already sends. The
