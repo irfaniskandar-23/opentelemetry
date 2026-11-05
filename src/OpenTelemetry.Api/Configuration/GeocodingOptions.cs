@@ -4,9 +4,9 @@ public sealed class GeocodingOptions
 {
     public const string SectionName = "Geocoding";
 
-    [Required]
+    [Required(ErrorMessage = "Set Geocoding:BaseUrl in appsettings.json.")]
     public required string BaseUrl { get; set; }
 
-    [Required]
+    [Required(ErrorMessage = "Set Geocoding:UserAgent in appsettings.json.")]
     public required string UserAgent { get; set; }
 }

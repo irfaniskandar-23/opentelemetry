@@ -11,6 +11,10 @@ public sealed class StoresController(
     IHttpClientFactory httpClientFactory,
     ILogger<StoresController> logger) : ControllerBase
 {
+    /// <remarks>
+    /// Geocoding runs inside the CreateStore activity so its client span nests; GlobalExceptionHandler records the exception once.
+    /// <see href="https://opentelemetry.io/docs/specs/semconv/general/recording-errors/"/>
+    /// </remarks>
     [HttpPost]
     public async Task<IActionResult> Create(
         CreateStoreRequest request,
