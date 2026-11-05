@@ -14,6 +14,11 @@
             "type": "command",
             "command": "pwsh",
             "args": ["-NoProfile", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-line-comments.ps1"]
+          },
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": ["-NoProfile", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-raw-config.ps1"]
           }
         ]
       }

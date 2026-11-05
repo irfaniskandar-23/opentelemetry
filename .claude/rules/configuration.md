@@ -21,6 +21,8 @@ Every setting reaches the app as a validated, strongly typed options class. A mi
 - Call `BindConfiguration`, `Bind`, `ValidateDataAnnotations` or `ValidateOnStart` anywhere except `Extensions/OptionsExtensions.cs`.
 - Take an `IConfiguration` parameter in an extension method.
 
+A hook blocks raw configuration reads in any `.cs` file, and `BindConfiguration` / `ValidateOnStart` outside `Extensions/OptionsExtensions.cs`.
+
 ## Links
 
 - <https://learn.microsoft.com/aspnet/core/fundamentals/configuration/options?view=aspnetcore-10.0>
