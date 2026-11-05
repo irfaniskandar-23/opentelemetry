@@ -21,29 +21,7 @@ var app = builder.Build();
 // exception page — so it catches first and the dev page never fires.
 app.UseExceptionHandler(); //catch and call response.clear
 
-// One middleware, one job: stamp the current trace onto every response so a
-// caller can quote it in a bug report.
-//
-// Written BEFORE await next() on purpose. HTTP sends headers ahead of the body,
-// so once the endpoint writes its first byte the headers are already on the
-// wire. Move this line below await next() and it still compiles, still throws
-// nothing, and silently changes nothing.
-app.Use(async (context, next) =>
-{
-    // Activity.Id is already the W3C string — 00-<traceId>-<spanId>-<flags>.
-    // Nothing to assemble by hand.
-    var activity = Activity.Current;
-
-    if (activity is not null)
-    {
-        // .TraceParent, not Headers["traceparent"]: well-known headers have
-        // dedicated fields on IHeaderDictionary, so this skips the string hash
-        // and a typo stops compiling. On the wire the name is still lowercase.
-        context.Response.Headers.TraceParent = activity.Id;
-    }
-
-    await next();
-});
+app.UseTraceParentHeader();
 
 app.MapPost("/stores", async (
     CreateStoreRequest request,
