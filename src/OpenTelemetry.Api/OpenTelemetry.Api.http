@@ -1,11 +1,10 @@
 @LocalHost = http://localhost:5038
 @LiveHost = https://otel-store-api-b9f9gffrcmh5a0gk.southeastasia-01.azurewebsites.net
 
-# Phase 8. Every request below uses this one variable. Change it to
-# {{LiveHost}} to send them to the Azure app instead of the laptop.
+# Every request uses this host. Set it to {{LiveHost}} to target Azure.
 @OpenTelemetry.Api_HostAddress = {{LocalHost}}
 
-### Create a store. Watch the console: one activity, its traceId invented by .NET.
+### Create a store. The response traceparent holds a .NET-generated trace id.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
 Content-Type: application/json
 
@@ -14,11 +13,8 @@ Content-Type: application/json
   "address": "Jl. M.H. Thamrin No. 1, Jakarta"
 }
 
-### The same request, this time carrying a trace context of our own.
+### Same request with our own traceparent. The response keeps its trace id.
 # Format: version-traceId-parentSpanId-flags
-# The console should print traceId=4bf92f3577b34da6a3ce929d0e0e4736 and
-# parentId=00f067aa0ba902b7. Nothing in Program.cs parses this header —
-# ASP.NET Core does it, per the W3C Trace Context spec.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
 Content-Type: application/json
 traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
@@ -28,7 +24,7 @@ traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
   "address": "Jl. Asia Afrika No. 8, Bandung"
 }
 
-### Read one store back. Replace the id with one returned above.
+### Read one store back. Replace the id with a returned one.
 GET {{OpenTelemetry.Api_HostAddress}}/stores/00000000-0000-0000-0000-000000000000
 Accept: application/json
 
@@ -36,32 +32,20 @@ Accept: application/json
 GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 
-### Throw on purpose. GlobalExceptionHandler catches it, marks the span Error
-### and returns RFC 9457 ProblemDetails.
-###
-### Phase 4: check the response headers. The traceparent here is written by
-### GlobalExceptionHandler, not by the middleware — UseExceptionHandler called
-### Response.Clear() and wiped the middleware's copy on the way past. The header
-### and the body's traceId should be byte-for-byte identical.
+### Throw on purpose. Check the traceparent header matches the ProblemDetails traceId.
 GET {{OpenTelemetry.Api_HostAddress}}/stores/00000000-0000-0000-0000-000000000000/boom
 Accept: application/json
 
-### Phase 4. Send no traceparent and read the one that comes back. .NET invents
-### a trace id, and the header's second field matches the console's spanId.
+### Send no traceparent and read the one that comes back.
 GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 
-### Phase 4. Send a traceparent and compare it with the response's.
-### Field 2 (trace id) comes back unchanged — same journey.
-### Field 3 (span id) is different — the server span is a new participant in it.
+### Send a traceparent and compare. The trace id is unchanged; the span id differs.
 GET {{OpenTelemetry.Api_HostAddress}}/stores
 Accept: application/json
 traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 
-### Phase 6. A resolvable address. The trace now has three spans: the request
-### span, CreateStore, and a CLIENT span for the call to Nominatim that nothing
-### in Program.cs created. Check store.address on CreateStore against url.full
-### on the client span — the query string there is redacted.
+### A resolvable address. The trace has a CLIENT span for the Nominatim call.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
 Content-Type: application/json
 
@@ -70,11 +54,7 @@ Content-Type: application/json
   "address": "Brandenburg Gate, Berlin"
 }
 
-### Phase 6. An address Nominatim cannot resolve. It answers 200 with an empty
-### array, so the failure is ours to detect: geocode.match_count is 0 and the
-### handler throws. GlobalExceptionHandler turns that into ProblemDetails.
-### In Better Stack, CreateStore itself is Error, carrying error.type and the
-### address that failed; the exception event appears once, on the request span.
+### An unresolvable address. CreateStore should be Error with error.type and the address.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
 Content-Type: application/json
 
@@ -83,9 +63,13 @@ Content-Type: application/json
   "address": "qwertyuiop asdfghjkl zxcvbnm 12345"
 }
 
-### Phase 6. Send a traceparent of your own and watch it survive the hop. The
-### client span shares this trace id, and the header Nominatim receives carries
-### it too — written by AddHttpClientInstrumentation, not by us.
+### Missing fields. Returns 400 before any span work, so no failed span appears.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+
+{}
+
+### Send a traceparent and check the client span shares its trace id.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
 Content-Type: application/json
 traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
