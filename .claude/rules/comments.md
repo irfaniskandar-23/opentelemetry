@@ -24,8 +24,8 @@ Applies to C#, `.csproj` (`<!-- -->`) and `.http` (`#`) files. Same purpose and 
 Good:
 
 ```csharp
-/// <summary>Sends traces and logs to Better Stack over OTLP.</summary>
-public static IServiceCollection AddObservability(this IServiceCollection services, IConfiguration config)
+/// <summary>Registers the named HttpClient that calls the Nominatim geocoding API.</summary>
+public static IServiceCollection AddGeocoding(this IServiceCollection services)
 ```
 
 Bad:
