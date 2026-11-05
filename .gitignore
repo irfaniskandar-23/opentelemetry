@@ -430,3 +430,6 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 .idea/
+
+# Phase 8 deployment package (built by dotnet publish, zipped by hand)
+app.zip

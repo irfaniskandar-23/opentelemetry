@@ -5,8 +5,9 @@
 
 ## Purpose
 
-Learn distributed tracing and OpenTelemetry by building one small system in seven
-phases, one concept at a time.
+Learn distributed tracing and OpenTelemetry by building one small system in
+phases, one concept at a time. Phases 1–7 were designed together; later phases
+are added here only once each is designed.
 
 The project exists to answer specific problems encountered at work:
 
@@ -289,6 +290,162 @@ raw value.
 
 **Verify:** in Better Stack, a trace can be opened and its log records viewed
 alongside it.
+
+### Phase 8 — Deploy to Azure App Service
+
+*Added 2026-10-21, after phases 1–7 were designed.*
+
+**Question answered:** what does it take for this app to run in the cloud, and
+does its trace still reach Better Stack from there?
+**Dependencies added:** none. No change to `Program.cs` is expected — phase 7's
+logging pipeline and `host.name` are already on `main`, and the code
+already reads every value from configuration, and that is what makes it
+deployable.
+
+**Who does what.** This phase is different in kind: the owner performs every
+Azure step by hand, from creating the resources to uploading the code and
+setting app settings. Claude explains each step before it is taken and verifies
+the result afterwards with read-only Azure CLI queries; Claude creates, changes
+and deploys nothing in Azure. Creating the resources in the portal for the first
+time is the point; scripting them is not part of this phase. Repository work —
+the phase note, the `.http` variable, `.gitignore`, `CLAUDE.md`, the PR — is
+Claude's, as in earlier phases.
+
+**Account state at design time.** The Azure subscription was upgraded from the
+free account to pay-as-you-go. A budget, `lab-budget`, is set at 1 USD a month
+on the subscription, with actual and forecasted alerts at 100%. Everything in
+this phase must cost nothing; any budget email means something outside the free
+tier is running.
+
+**The building blocks.** Three resources, each inside the last:
+
+```
+Resource group        a folder for everything this project creates
+ └─ App Service plan  the compute — OS, region and pricing tier live here
+     └─ Web App       StoreApi itself, at https://<name>.azurewebsites.net
+```
+
+- **Plan:** Linux, pricing tier **Free F1**. The tier belongs to the plan, not
+  the app; that is why a $0 plan makes everything in it free.
+- **Web App:** runtime stack **.NET 10 (LTS)** (`DOTNETCORE|10.0`, supported on
+  Linux App Service until November 2028). Code deployment, not a container.
+- **Region:** the owner's choice, near the owner. **Names:** builder's call; the
+  Web App name must be globally unique because it becomes the hostname.
+
+**Portal checks before pressing Create.** The Create Web App wizard pre-fills
+defaults, and several of them would either cost money or leak a later phase:
+
+| Tab | Must read | Why |
+|---|---|---|
+| Basics | Pricing plan **Free F1**, OS **Linux**, runtime **.NET 10** | Defaults are often a paid tier. Microsoft's own .NET quickstart uses `P0v3`, which is paid. |
+| Deployment | Continuous deployment **Disabled** | That switch is phase 10. |
+| Monitoring | Application Insights **No** | A second telemetry pipeline would compete with the one being taught, and it is a separate billable resource. |
+
+**Getting the code there.** Built locally, uploaded by hand:
+
+1. `dotnet publish -c Release -o publish` from `src/OpenTelemetry.Api`. The
+   folder is opened and inspected before going further: it is exactly what
+   Azure runs — `StoreApi.dll`, `appsettings.json`, the packages — and nothing
+   else from the repository.
+2. Zip the folder's contents, not the folder:
+   `Compress-Archive -Path publish\* -DestinationPath app.zip`. A zip with a
+   `publish/` directory at its root is not found by App Service.
+3. `az webapp deploy --resource-group <rg> --name <app> --src-path app.zip --type zip`.
+   App Service unpacks it into `/home/site/wwwroot` and restarts the app.
+
+`publish/` and `app.zip` are build output and must never be committed;
+`.gitignore` already covers `publish/` and gains `app.zip`.
+
+**The deliberate first failure.** The first deploy is made *without* the Better
+Stack token. `Program.cs` throws at startup when `BetterStack:SourceToken` is
+missing, so the app will not start. This is kept, not avoided: the owner finds
+the exception in the App Service log stream, which is the first thing to know
+about any cloud app that will not start. Then:
+
+- In the portal, **Environment variables → App settings**, add
+  `BetterStack__SourceToken`. Double underscore, because Linux environment
+  variable names cannot contain a colon; .NET maps `__` back to `:`, so the code
+  reads the same key it reads locally from user secrets.
+- Saving an app setting restarts the app. App settings override
+  `appsettings.json` and are encrypted at rest — the cloud's equivalent of user
+  secrets.
+- `BetterStack:Endpoint` is not a secret and still comes from `appsettings.json`.
+
+`ASPNETCORE_ENVIRONMENT` is deliberately left unset. The app then runs as
+`Production`, and every exported span carries
+`deployment.environment.name = Production` — the attribute that tells laptop
+traces and cloud traces apart in the same Better Stack source.
+
+**What the free tier changes.** F1 allows 60 CPU minutes a day; past that the
+app returns `403` until midnight UTC. It has no Always On, so an idle app is
+unloaded and the next request pays a cold start — visible in Better Stack as an
+unusually long first request span. The in-memory store is emptied on every
+restart and unload, so a store ID from yesterday can return `404`. All three are
+expected behaviour to observe, not bugs to fix.
+
+**Verify:**
+
+1. Read-only CLI checks confirm the plan is Linux on `F1`, the Web App runs
+   `DOTNETCORE|10.0` and is `Running`, and `lab-budget` still shows 0 spend.
+2. `GET /stores` on the live URL returns `[]` with a `traceparent` header.
+3. That trace ID finds the trace in Better Stack, under service `store-api`,
+   with `deployment.environment.name = Production` and a `host.name` that is
+   the App Service instance, not the laptop.
+4. `GET /stores/{id}` with an unknown id on the live URL produces a trace whose
+   `Store not found` warning appears beside it — phase 7's correlation, from
+   the cloud.
+5. **`client.address`, observed.** The request enricher tags each span with
+   `RemoteIpAddress`. Behind App Service's load balancer that may be the
+   balancer's address rather than the caller's, depending on whether forwarded
+   headers are applied. The value the cloud traces actually carry is recorded,
+   with no code change. The note also records the privacy trade-off: on a public
+   URL this is third parties' IP addresses, a searchable attribute, sent to a
+   third-party service — the convention lists it as Recommended, but keeping it
+   is a decision, not a default.
+6. `GET /stores/{id}/boom` on the live URL returns ProblemDetails and an error
+   trace, as it does locally.
+7. `POST /stores` with a known address produces a trace with the Nominatim
+   client span. If Nominatim rejects or throttles requests from Azure's shared
+   outbound addresses, that is recorded as a finding — the trace of the failure
+   is itself the evidence, which is phase 6's lesson arriving unprompted.
+
+The `.http` file gains a variable for the live host so the same requests run
+against either target.
+
+**End state.** The resources stay running after this phase. Phase 10 deploys to
+the same Web App.
+
+**Note covers:** resource group, plan and app, and why the tier lives on the
+plan; the publish folder as the deployable unit, versus the repository; app
+settings as configuration from outside the code, and the `__` rule; reading a
+startup failure from the log stream; the environment and host resource
+attributes; what a load balancer does to the caller's address, and the privacy
+cost of recording it; free tier limits and cold starts.
+
+**Out of scope for this phase:** CI/CD; creating resources from the CLI or as
+infrastructure code; custom domains and certificates; Key Vault; Application
+Insights; scaling; any database.
+
+### Phase 9 — Noticing failures
+
+*Planned, not yet designed.* Direction agreed on 2026-11-05: Better Stack turns
+failed requests into a notification and a summary, using only data the app
+already sends, through features already in Better Stack: a chart of failed
+spans, an alert on that chart, the incident the alert opens (email by default),
+and a post-mortem written on the incident. AI SRE is out of scope; it attaches to
+the same chain later. First change agreed: `GlobalExceptionHandler` sets
+`error.type` on the request span, which the HTTP semantic conventions make
+Conditionally Required when a request ends in error. This section is completed
+when the phase is designed.
+
+### Phase 10 — Automated deployment (CI/CD)
+
+*Planned, not yet designed. Numbered 9 until 2026-11-05.* Direction agreed on 2026-10-21: a GitHub Actions
+workflow deploys to the phase 8 Web App when a PR is merged into `main` — not
+when it is approved, since approval does not put code on `main`. GitHub proves
+its identity to Azure through OpenID Connect rather than a stored password. The
+workflow automates exactly the publish, zip and deploy steps done by hand in
+phase 8. This section is completed when the phase is designed.
 
 ## Verification approach
 

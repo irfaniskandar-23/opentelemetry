@@ -1,4 +1,9 @@
-@OpenTelemetry.Api_HostAddress = http://localhost:5038
+@LocalHost = http://localhost:5038
+@LiveHost = https://otel-store-api-b9f9gffrcmh5a0gk.southeastasia-01.azurewebsites.net
+
+# Phase 8. Every request below uses this one variable. Change it to
+# {{LiveHost}} to send them to the Azure app instead of the laptop.
+@OpenTelemetry.Api_HostAddress = {{LocalHost}}
 
 ### Create a store. Watch the console: one activity, its traceId invented by .NET.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
