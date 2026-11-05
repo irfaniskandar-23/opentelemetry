@@ -7,6 +7,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddConfiguration();
 
 // Named once because three places need it: the registration, the resolve, and
 // the enrichment hook that stamps it on the client span.
