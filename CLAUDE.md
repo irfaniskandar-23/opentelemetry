@@ -159,5 +159,8 @@ most here:
 - Merge commits only, never rebase.
 - Code rules live in `.claude/rules/` (comments, configuration, program startup,
   controllers). Two hooks in `.claude/settings.json` block `//` comments and raw
-  configuration reads in `.cs` files.
+  configuration reads in `.cs` files. A third reminds, before each commit, when
+  code in a rule's area changed but the rule file did not.
+- When a discussion settles a new convention or changes one, update the matching
+  `.claude/rules/*.md` file in the same commit as the code.
 - Every phase ends with a notes file and a PR that updates "Where we are now".
