@@ -9,6 +9,8 @@
     <PackageId>StoreApi</PackageId>
     <!-- Same collision at runtime: the output assembly must not shadow the real OpenTelemetry.Api.dll. -->
     <AssemblyName>StoreApi</AssemblyName>
+    <!-- Checks the .editorconfig code style on every build, not only in the editor. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>

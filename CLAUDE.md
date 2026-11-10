@@ -158,7 +158,8 @@ most here:
 - `dotnet build` must pass before any push.
 - Merge commits only, never rebase.
 - Code rules live in `.claude/rules/` (comments, configuration, program startup,
-  controllers). Two hooks in `.claude/settings.json` block `//` comments and raw
+  controllers, code style). `.editorconfig` holds the code style the build checks.
+  Two hooks in `.claude/settings.json` block `//` comments and raw
   configuration reads in `.cs` files. A third reminds, before each commit, when
   code in a rule's area changed but the rule file did not.
 - When a discussion settles a new convention or changes one, update the matching
