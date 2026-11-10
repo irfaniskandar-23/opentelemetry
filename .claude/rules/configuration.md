@@ -11,7 +11,7 @@ Every setting reaches the app as a validated, strongly typed options class. A mi
 ## Adding a setting
 
 1. Put the value in `appsettings.json`. If it is a credential, use user secrets instead (`dotnet user-secrets set "Section:Key" "value" --project src/OpenTelemetry.Api`), never `appsettings*.json`.
-2. Add or extend an options class in `src/OpenTelemetry.Api/Configuration/`: a `public const string SectionName`, and `[Required]` on every value the app cannot run without (see `GeocodingOptions`).
+2. Add or extend an options class in `src/OpenTelemetry.Api/Configuration/`: a `public const string SectionName`, and `[Required]` on every value the app cannot run without (see `GeocodingOptions`). Its message names the full key, built from constants so a rename cannot leave it stale: `[Required(ErrorMessage = $"{SectionName}:{nameof(BaseUrl)} is required.")]`. Say what is missing, not where to set it; the value can come from any configuration source.
 3. Register it with one line inside `AddConfiguration` (`Extensions/ConfigurationExtensions.cs`): `services.AddValidatedOptions<MyOptions>(MyOptions.SectionName);`
 4. Consume it by injecting `IOptions<T>`, or by resolving it from the `IServiceProvider` inside a registration callback. To configure another library's options from yours, use `services.AddOptions<TOther>(name).Configure<IOptions<T>>(...)`.
 
