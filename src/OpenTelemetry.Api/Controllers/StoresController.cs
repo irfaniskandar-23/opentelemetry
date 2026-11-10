@@ -11,6 +11,16 @@ public sealed class StoresController(
     IHttpClientFactory httpClientFactory,
     ILogger<StoresController> logger) : ControllerBase
 {
+    private const string CreateStoreSpanName = "CreateStore";
+
+    private const string StoreIdTag = "store.id";
+    private const string StoreNameTag = "store.name";
+    private const string StoreAddressTag = "store.address";
+    private const string GeocodeMatchCountTag = "geocode.match_count";
+    private const string GeocodeLatitudeTag = "geocode.latitude";
+    private const string GeocodeLongitudeTag = "geocode.longitude";
+    private const string ErrorTypeTag = "error.type";
+
     /// <remarks>
     /// Geocoding runs inside the CreateStore activity so its client span nests; GlobalExceptionHandler records the exception once.
     /// <see href="https://opentelemetry.io/docs/specs/semconv/general/recording-errors/"/>
@@ -20,10 +30,10 @@ public sealed class StoresController(
         CreateStoreRequest request,
         CancellationToken cancellationToken)
     {
-        using var activity = Telemetry.Source.StartActivity("CreateStore");
+        using var activity = Telemetry.Source.StartActivity(CreateStoreSpanName);
 
-        activity?.SetTag("store.name", request.Name);
-        activity?.SetTag("store.address", request.Address);
+        activity?.SetTag(StoreNameTag, request.Name);
+        activity?.SetTag(StoreAddressTag, request.Address);
 
         try
         {
@@ -38,7 +48,7 @@ public sealed class StoresController(
             var matches = await response.Content
                 .ReadFromJsonAsync<GeocodingMatch[]>(cancellationToken) ?? [];
 
-            activity?.SetTag("geocode.match_count", matches.Length);
+            activity?.SetTag(GeocodeMatchCountTag, matches.Length);
 
             if (matches.Length == 0)
             {
@@ -57,10 +67,10 @@ public sealed class StoresController(
                 longitude,
                 DateTimeOffset.UtcNow);
 
-            activity?.SetTag("store.id", store.Id);
+            activity?.SetTag(StoreIdTag, store.Id);
 
-            activity?.SetTag("geocode.latitude", latitude);
-            activity?.SetTag("geocode.longitude", longitude);
+            activity?.SetTag(GeocodeLatitudeTag, latitude);
+            activity?.SetTag(GeocodeLongitudeTag, longitude);
 
             stores[store.Id] = store;
 
@@ -69,7 +79,7 @@ public sealed class StoresController(
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.SetTag("error.type", ex.GetType().FullName);
+            activity?.SetTag(ErrorTypeTag, ex.GetType().FullName);
 
             throw;
         }
@@ -78,7 +88,7 @@ public sealed class StoresController(
     [HttpGet("{id:guid}")]
     public IActionResult GetById(Guid id)
     {
-        Activity.Current?.SetTag("store.id", id);
+        Activity.Current?.SetTag(StoreIdTag, id);
 
         if (stores.TryGetValue(id, out var store))
         {
@@ -91,7 +101,10 @@ public sealed class StoresController(
     }
 
     [HttpGet]
-    public IActionResult List() => Ok(stores.Values);
+    public IActionResult List()
+    {
+        return Ok(stores.Values);
+    }
 
     [HttpGet("{id:guid}/boom")]
     public IActionResult Boom(Guid id)

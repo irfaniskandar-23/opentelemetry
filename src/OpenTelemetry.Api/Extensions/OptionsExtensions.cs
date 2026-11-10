@@ -11,8 +11,10 @@ public static class OptionsExtensions
     public static OptionsBuilder<T> AddValidatedOptions<T>(
         this IServiceCollection services, string sectionName)
         where T : class
-        => services.AddOptions<T>()
+    {
+        return services.AddOptions<T>()
             .BindConfiguration(sectionName)
             .ValidateDataAnnotations()
             .ValidateOnStart();
+    }
 }
