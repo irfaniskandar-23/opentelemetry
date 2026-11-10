@@ -4,9 +4,9 @@ public sealed class BetterStackOptions
 {
     public const string SectionName = "BetterStack";
 
-    [Required(ErrorMessage = "Set BetterStack:Endpoint in appsettings.json.")]
+    [Required(ErrorMessage = "BetterStack:Endpoint is required.")]
     public required string Endpoint { get; set; }
 
-    [Required(ErrorMessage = "Set BetterStack:SourceToken with dotnet user-secrets or an app setting.")]
+    [Required(ErrorMessage = "BetterStack:SourceToken is required.")]
     public required string SourceToken { get; set; }
 }
