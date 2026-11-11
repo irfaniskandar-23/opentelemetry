@@ -53,6 +53,21 @@ The API also runs in the cloud, on Azure App Service's free tier. Its traces
 reach Better Stack from there too, marked `Production` and naming the Azure
 machine, so laptop and cloud traces never get mixed up.
 
+`Program.cs` has been reorganised into a short list of calls, with settings,
+telemetry, the geocoding client and the endpoints each in their own file. Four
+small things changed:
+
+- Request span names lost their leading slash (`POST stores`, not `POST /stores`).
+- The "Store found" and "Store not found" logs now come from `StoresController`.
+- An unknown store still gets a 404, now with an error message in the body.
+- A create request with missing fields or broken JSON now gets a 400 before any
+  work starts, so it no longer shows up as a failed span.
+
+Logging was tidied up too. Startup lines and the HttpClient's own request lines
+no longer go to Better Stack. If the app fails to start, for example because a
+setting is missing, it prints one line naming the cause instead of a stack
+trace, and that line reaches Better Stack as a Critical log.
+
 **Next:** phase 9, noticing failures. Better Stack should tell us when requests
 fail and summarise what went wrong, using the data the app already sends. The
 first agreed change: the error handler labels each failed request span with
@@ -114,11 +129,12 @@ excluded on purpose — they teach nothing new about tracing.
 
 ## Tech stack
 
-- .NET 10, ASP.NET Core minimal API, C# with nullable enabled.
+- .NET 10, ASP.NET Core with controllers, C# with nullable enabled.
 - Storage: an in-memory `ConcurrentDictionary` singleton. No database.
 - No test project. Verification is manual through
   `src/OpenTelemetry.Api/OpenTelemetry.Api.http`.
 - OpenTelemetry SDK plus an OTLP exporter to Better Stack, from phase 5 onward.
+- Settings are read through the options pattern and validated at startup.
 - Secrets go in user secrets, never in `appsettings.json`.
 - The project folder is named `OpenTelemetry.Api`, but `PackageId` and
   `AssemblyName` in the csproj are both `StoreApi`, to avoid clashing with the
@@ -128,6 +144,10 @@ excluded on purpose — they teach nothing new about tracing.
 
 ```
 src/OpenTelemetry.Api            StoreApi   — the only service
+  Configuration/                 settings classes read from configuration
+  Extensions/                    startup code, one file per concern
+  Controllers/                   the store endpoints
+  Models/                        request and data types
 docs/phase-N-<topic>.md          one note per phase; concepts live here
 docs/superpowers/specs/          the design spec
 ```
@@ -142,4 +162,11 @@ most here:
 - Conventional Commits.
 - `dotnet build` must pass before any push.
 - Merge commits only, never rebase.
+- Code rules live in `.claude/rules/` (comments, configuration, program startup,
+  controllers, code style). `.editorconfig` holds the code style the build checks.
+  Two hooks in `.claude/settings.json` block `//` comments and raw
+  configuration reads in `.cs` files. A third reminds, before each commit, when
+  code in a rule's area changed but the rule file did not.
+- When a discussion settles a new convention or changes one, update the matching
+  `.claude/rules/*.md` file in the same commit as the code.
 - Every phase ends with a notes file and a PR that updates "Where we are now".

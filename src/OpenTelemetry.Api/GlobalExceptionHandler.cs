@@ -2,8 +2,13 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
+/// <summary>
+/// Turns unhandled exceptions into ProblemDetails responses.
+/// <see href="https://learn.microsoft.com/aspnet/core/fundamentals/error-handling?view=aspnetcore-10.0#iexceptionhandler"/>
+/// </summary>
 internal sealed class GlobalExceptionHandler(IProblemDetailsService problemDetailsService) : IExceptionHandler
 {
+    /// <remarks>The traceparent header is written again because UseExceptionHandler cleared the response.</remarks>
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         var activity = Activity.Current;
@@ -12,11 +17,6 @@ internal sealed class GlobalExceptionHandler(IProblemDetailsService problemDetai
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
 
-        // Re-stamp the header the traceparent middleware already set once. By the
-        // time we get here UseExceptionHandler has called Response.Clear(), which
-        // empties the whole header collection — so the earlier write is gone.
-        // Still safe to write: nothing has been flushed yet, the body goes out
-        // below.
         if (activity is not null)
         {
             httpContext.Response.Headers.TraceParent = activity.Id;

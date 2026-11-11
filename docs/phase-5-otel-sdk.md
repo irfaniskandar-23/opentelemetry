@@ -272,7 +272,8 @@ Two csproj lines fix both:
 
 Neither renames the project. The folder, the namespaces and
 `Telemetry.SourceName` are untouched, which is why the `scope` in exported spans
-still reads `OpenTelemetry.Api`. The transferable lesson: **NuGet identity and
+still reads `OpenTelemetry.Api`. (A later refactor renamed the source to
+`StoreApi`, after the assembly.) The transferable lesson: **NuGet identity and
 assembly identity are separate things**, and a name collision has to be fixed in
 both places.
 

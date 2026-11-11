@@ -1,15 +1,15 @@
 using System.Diagnostics;
 
-// The application's own ActivitySource. ASP.NET Core has one; this is ours.
-//
-// Static and shared on purpose. An ActivitySource is meant to exist once per
-// component for the lifetime of the process — it is not a per-request object,
-// and it does not belong in the DI container.
+/// <summary>
+/// The app's own ActivitySource, created once and shared for the process lifetime.
+/// <see href="https://learn.microsoft.com/dotnet/core/diagnostics/distributed-tracing-instrumentation-walkthroughs#add-basic-instrumentation"/>
+/// </summary>
 public static class Telemetry
 {
-    // Named separately because two places need it: the code that starts
-    // activities, and the listener that decides whether to allow them.
-    public const string SourceName = "OpenTelemetry.Api";
+    /// <summary>Named after the assembly; shared by the code that starts activities and by AddSource in ConfigureTracing.</summary>
+    public const string SourceName = "StoreApi";
 
-    public static readonly ActivitySource Source = new(SourceName, "1.0.0");
+    private const string SourceVersion = "1.0.0";
+
+    public static readonly ActivitySource Source = new(SourceName, SourceVersion);
 }

@@ -1,4 +1,24 @@
 <Solution>
+  <Folder Name="/.claude/">
+    <File Path=".claude/settings.json" />
+  </Folder>
+  <Folder Name="/.claude/hooks/">
+    <File Path=".claude/hooks/block-line-comments.ps1" />
+    <File Path=".claude/hooks/block-raw-config.ps1" />
+    <File Path=".claude/hooks/remind-rule-update.ps1" />
+  </Folder>
+  <Folder Name="/.claude/rules/">
+    <File Path=".claude/rules/code-style.md" />
+    <File Path=".claude/rules/comments.md" />
+    <File Path=".claude/rules/configuration.md" />
+    <File Path=".claude/rules/controllers.md" />
+    <File Path=".claude/rules/program-startup.md" />
+  </Folder>
+  <Folder Name="/.github/" />
+  <Folder Name="/.github/workflows/" />
+  <Folder Name="/Solution Items/">
+    <File Path="CLAUDE.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/OpenTelemetry.Api/OpenTelemetry.Api.csproj" />
   </Folder>

@@ -1,0 +1,6 @@
+root = true
+
+[*.cs]
+# Methods always get a { } block body, never =>, so each step reads as its own statement.
+csharp_style_expression_bodied_methods = false:error
+csharp_style_expression_bodied_local_functions = false:error
