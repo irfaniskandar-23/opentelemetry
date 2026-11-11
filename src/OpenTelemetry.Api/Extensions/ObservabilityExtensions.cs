@@ -86,10 +86,12 @@ public static class ObservabilityExtensions
     }
 
     /// <summary>The signal path is added by hand because an endpoint set in code is used as-is.</summary>
+    /// <remarks>Its own HttpClient lets the last send work while a failed startup shuts the app down.</remarks>
     private static void PointAtBetterStack(OtlpExporterOptions exporter, BetterStackOptions betterStack, string signalPath)
     {
         exporter.Endpoint = new Uri($"{betterStack.Endpoint}/{signalPath}");
         exporter.Protocol = OtlpExportProtocol.HttpProtobuf;
         exporter.Headers = $"Authorization=Bearer {betterStack.SourceToken}";
+        exporter.HttpClientFactory = () => new HttpClient { Timeout = TimeSpan.FromMilliseconds(exporter.TimeoutMilliseconds) };
     }
 }
