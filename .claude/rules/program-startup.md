@@ -7,6 +7,15 @@ paths:
 
 `Program.cs` is a table of contents: one call per line, in the order the pipeline needs. It holds no logic, no lambdas and no comments. Top-level statements cannot carry XML doc comments, so the file stays bare.
 
+## Startup failure
+
+The one exception is the try/catch around `app.StartAsync()`. A failed start logs one `Critical` line with the exception message only, so a developer sees the cause without a stack trace.
+
+- Return exit code `1`; do not rethrow, or the runtime prints the stack trace again.
+- Do not wrap `app.Run()`: it shuts logging down before the catch runs.
+- `await using` on `app` sends logs still waiting when the program ends.
+- `appsettings.json` raises `Microsoft.Extensions.Hosting.Internal.Host` to `Critical` to hide .NET's own stack-trace line.
+
 ## Adding wiring
 
 - New service registrations go in an `Add{Group}` extension on `IServiceCollection` (namespace `Microsoft.Extensions.DependencyInjection`).
@@ -21,7 +30,7 @@ Middleware order matters. `UseExceptionHandler()` comes first so it wraps everyt
 
 ## Never
 
-- Put logic, lambdas or comments in `Program.cs`.
+- Put logic, lambdas or comments in `Program.cs`, other than the startup try/catch.
 - Move logic or settings into an extension; extensions only register services or middleware.
 
 ## Links
