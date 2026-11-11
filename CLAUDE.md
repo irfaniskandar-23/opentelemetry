@@ -63,6 +63,11 @@ small things changed:
 - A create request with missing fields or broken JSON now gets a 400 before any
   work starts, so it no longer shows up as a failed span.
 
+Logging was tidied up too. Startup lines and the HttpClient's own request lines
+no longer go to Better Stack. If the app fails to start, for example because a
+setting is missing, it prints one line naming the cause instead of a stack
+trace, and that line reaches Better Stack as a Critical log.
+
 **Next:** phase 9, noticing failures. Better Stack should tell us when requests
 fail and summarise what went wrong, using the data the app already sends. The
 first agreed change: the error handler labels each failed request span with
