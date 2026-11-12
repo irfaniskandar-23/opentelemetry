@@ -6,7 +6,14 @@ using Microsoft.AspNetCore.Mvc;
 /// Turns unhandled exceptions into ProblemDetails responses.
 /// <see href="https://learn.microsoft.com/aspnet/core/fundamentals/error-handling?view=aspnetcore-10.0#iexceptionhandler"/>
 /// </summary>
-internal sealed class GlobalExceptionHandler(IProblemDetailsService problemDetailsService) : IExceptionHandler
+/// <param name="logger">
+/// Logs the exception, which .NET 10 no longer does once this handler returns true.
+/// <see href="https://learn.microsoft.com/aspnet/core/breaking-changes/10/exception-handler-diagnostics-suppressed?view=aspnetcore-10.0"/>
+/// <see href="https://opentelemetry.io/docs/specs/semconv/exceptions/exceptions-logs/"/>
+/// </param>
+internal sealed class GlobalExceptionHandler(
+    IProblemDetailsService problemDetailsService,
+    ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
     /// <summary>
     /// Set here because the ASP.NET Core instrumentation never sees exceptions this handler catches.
@@ -20,7 +27,7 @@ internal sealed class GlobalExceptionHandler(IProblemDetailsService problemDetai
         var activity = Activity.Current;
         activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity?.SetTag(ErrorTypeTag, exception.GetType().FullName);
-        activity?.AddException(exception);
+        logger.LogError(exception, "Request failed");
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
 
