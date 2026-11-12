@@ -26,16 +26,12 @@ internal sealed class GlobalExceptionHandler(
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         var activity = Activity.Current;
-        activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity?.SetTag(ErrorTypeTag, exception.GetType().FullName);
+
+        MarkSpanFailed(activity, exception);
         logger.LogError(exception, "Request failed");
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-
-        if (activity is not null)
-        {
-            httpContext.Response.Headers.TraceParent = activity.Id;
-        }
+        StampTraceParent(httpContext, activity);
 
         await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
@@ -43,11 +39,25 @@ internal sealed class GlobalExceptionHandler(
             Exception = exception,
             ProblemDetails = new ProblemDetails
             {
-                Title ="An unexpected error occurred.",
+                Title = "An unexpected error occurred.",
                 Detail = "The request could not be completed."
             }
         });
 
         return true;
+    }
+
+    private static void MarkSpanFailed(Activity? activity, Exception exception)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+        activity?.SetTag(ErrorTypeTag, exception.GetType().FullName);
+    }
+
+    private static void StampTraceParent(HttpContext httpContext, Activity? activity)
+    {
+        if (activity is not null)
+        {
+            httpContext.Response.Headers.TraceParent = activity.Id;
+        }
     }
 }
