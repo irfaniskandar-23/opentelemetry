@@ -43,8 +43,7 @@ internal sealed class GlobalExceptionHandler(
             Exception = exception,
             ProblemDetails = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An unexpected error occurred.",
+                Title ="An unexpected error occurred.",
                 Detail = "The request could not be completed."
             }
         });
