@@ -109,6 +109,8 @@ public sealed class StoresController(
     [HttpGet("{id:guid}/boom")]
     public IActionResult Boom(Guid id)
     {
+        Activity.Current?.SetTag(StoreIdTag, id);
+
         throw new InvalidOperationException($"Deliberate failure for store {id}.");
     }
 }
