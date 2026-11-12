@@ -22,6 +22,7 @@ internal sealed class GlobalExceptionHandler(
     private const string ErrorTypeTag = "error.type";
 
     /// <remarks>The traceparent header is written again because UseExceptionHandler cleared the response.</remarks>
+    /// <returns>Always true, even without a body: false makes the middleware log the exception again.</returns>
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         var activity = Activity.Current;
@@ -36,7 +37,7 @@ internal sealed class GlobalExceptionHandler(
             httpContext.Response.Headers.TraceParent = activity.Id;
         }
 
-        return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
+        await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
             Exception = exception,
@@ -47,5 +48,7 @@ internal sealed class GlobalExceptionHandler(
                 Detail = "The request could not be completed."
             }
         });
+
+        return true;
     }
 }
