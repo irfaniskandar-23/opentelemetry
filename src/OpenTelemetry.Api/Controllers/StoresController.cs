@@ -106,11 +106,14 @@ public sealed class StoresController(
         return Ok(stores.Values);
     }
 
+    /// <summary>Fails with a NullReferenceException on purpose, to exercise error handling.</summary>
     [HttpGet("{id:guid}/boom")]
     public IActionResult Boom(Guid id)
     {
         Activity.Current?.SetTag(StoreIdTag, id);
 
-        throw new InvalidOperationException($"Deliberate failure for store {id}.");
+        string? storeNote = null;
+
+        return Ok(storeNote.Split());
     }
 }
