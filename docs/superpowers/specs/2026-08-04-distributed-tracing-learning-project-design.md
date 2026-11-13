@@ -431,15 +431,147 @@ Insights; scaling; any database.
 
 ### Phase 9 — Noticing failures
 
-*Planned, not yet designed.* Direction agreed on 2026-11-05: Better Stack turns
-failed requests into a notification and a summary, using only data the app
-already sends, through features already in Better Stack: a chart of failed
-spans, an alert on that chart, the incident the alert opens (email by default),
-and a post-mortem written on the incident. AI SRE is out of scope; it attaches to
-the same chain later. First change agreed: `GlobalExceptionHandler` sets
-`error.type` on the request span, which the HTTP semantic conventions make
-Conditionally Required when a request ends in error. This section is completed
-when the phase is designed.
+*Direction agreed 2026-11-05; designed 2026-11-12. Answers the first box of
+GitHub issue #13.*
+
+**Question answered:** how does a failure in production become one incident that
+someone is told about, and how does that person get from the incident to the
+line of code that failed?
+**Dependencies added:** none.
+
+**The chain.** Failed request span → chart of failed `Production` requests →
+alert on that chart → incident → email. Better Stack's alert reads
+pre-aggregated *metrics* (counts by label), never the raw spans, so the
+incident knows *how many* and *which kind*, not *why*. The why stays on the
+trace, which is reached by hand from the incident (see **Verify**). That split —
+alerts count, traces explain — is the lesson.
+
+**Who does what.** Code changes are Claude's, as in earlier phases. In Better
+Stack the work is split by the owner's choice: Claude adds the two labels and
+edits the chart's query through the Better Stack MCP tools, explaining each
+change first; the owner edits the alert in the Better Stack UI, guided one
+screen at a time, because alert settings are what real work touches. Claude
+then reads the alert back with the tools to confirm every setting. The on-call
+schedule and escalation policies are not configured: assigning on-call needs a
+paid plan, so incidents escalate to the entire team, which is the owner.
+
+**Code changes** (on `feature/phase-9-alerting`):
+
+1. `GlobalExceptionHandler` sets `error.type` to the exception's full type name
+   on the request span. The HTTP conventions make it Conditionally Required on
+   a failed request, and nothing else sets it: the request span carried none
+   before this change.
+2. `GlobalExceptionHandler` logs the exception once with
+   `LogError(exception, "Request failed")` instead of `AddException`. This
+   supersedes step 2 of phase 3. Two reasons: since .NET 10 the exception
+   middleware no longer logs an exception an `IExceptionHandler` reports as
+   handled, so failures produced no log line at all; and the semantic
+   conventions now record exceptions as log records and mark the span-event
+   form deprecated. The message stays generic (phase 7); type, message and stack
+   trace travel as log attributes. The span keeps status `Error` and
+   `error.type`, which is what the alert counts.
+3. `GET /stores/{id}/boom` fails with a `NullReferenceException` instead of a
+   thrown `InvalidOperationException`, and tags `store.id`. A null dereference
+   is a realistic bug with its own `error.type`; the old exception shared its
+   type with the "no coordinates" failure in `POST /stores`, so grouping by type
+   would have merged two unrelated problems. Compiler warning CS8602 on that
+   line is expected and stays.
+
+**What counts as a failure.** A server span with status `error` (one per
+request, so each failure counts once, even when a caller's `traceparent` makes
+it a child span) whose resource has `deployment.environment.name = Production`. Laptop failures never
+open an incident. `/boom` is the test failure. Whether "no coordinates for this
+address" is a server failure or the caller's mistake (a 4xx) is parked, not
+decided here.
+
+**Better Stack configuration.**
+
+- *Two labels.* The metrics only carry labels Better Stack extracts from each
+  incoming span, and neither the environment nor `error.type` is among the
+  built-in ones. Two metric expressions are added to source `otel-learning`,
+  type `string_low_cardinality`, applied to new data only (history is not
+  rebuilt):
+
+  | Label | Expression |
+  |---|---|
+  | `environment` | `JSONExtract(raw, 'resource', 'attributes', 'deployment.environment.name', 'Nullable(String)')` |
+  | `error_type` | `JSONExtract(raw, 'span', 'attributes', 'error.type', 'Nullable(String)')` |
+
+- *Chart.* The existing chart "Failed requests by endpoint" on dashboard
+  "Tracing" is edited, not replaced: it keeps counting server spans with
+  `label('error') = '1'` (the old `root` filter is dropped: a caller's
+  `traceparent` would hide those failures), adds `label('environment') = 'Production'`, and splits
+  by `label('error_type')` instead of `span_name`. It is renamed to say what it
+  now shows.
+- *Alert.* The existing alert "Request failed" is edited:
+
+  | Setting | Value | Why |
+  |---|---|---|
+  | Rule | failed requests `> 0`, checked every 60 s, no confirmation wait | Traffic is manual; one failure is a signal |
+  | `incident_per_series` | on | One incident per error type; a burst of one type is one incident |
+  | `recovery_period` | `null` | Incidents stay open until someone resolves them, so nothing closes unseen. Decided by the owner. |
+  | Notifications | email only | Push, SMS and calls need a paid plan, so the phone stays silent on the free tier |
+  | `incident_name` | names the error type (`{{series_name}}`) and `Production` | The default "Tracing › Request failed" said nothing |
+  | `incident_cause` | plain-language markdown: what failed, how often, and a link to Explore traces' Errors tab | The default cause restated the rule, and nothing linked to the traces |
+
+  Exact wording is the builder's call. The paused alert "Error rate high" is
+  left as it is.
+
+**Verify:**
+
+1. On the laptop, one `/boom` request: its trace has `error.type =
+   System.NullReferenceException` and `store.id`; one `Error` log line named
+   "Request failed" is linked to it; **no incident opens**.
+2. On Azure, before the phase 9 PR is opened, in two deploys made by hand as in
+   phase 8. First `main` alone, which carries the program startup refactor and
+   has not been deployed yet: `GET /stores` on the live URL answers and its
+   trace reaches Better Stack as `Production`. Then the phase 9 branch: one
+   `/boom` on the live URL opens exactly one incident, named with the error
+   type, by email. A second `/boom` while it is open joins it rather
+   than opening another. It stays open until resolved by hand. Deploying the
+   refactor on its own first means a breakage can be traced to one change.
+3. From that incident, the cause's link and the time window lead to the failed
+   request in Explore traces, and its stack trace names the failing line.
+4. The owner writes a post-mortem on that incident by hand — the practice run
+   for an RCA skill later.
+
+**Known risks.**
+
+- *Silent break.* The labels read exact attribute paths. Renaming `error.type`
+  or the environment attribute in code would empty the label, and failures would
+  stop opening incidents, with no error anywhere. The note says so.
+- *Configuration outside Git.* The labels, chart and alert live in Better Stack.
+  The note records the two expressions and the alert settings so they can be
+  recreated.
+- *Plan limits.* Whether the free plan limits metric expressions is unknown
+  until the first is created.
+
+**Open items.** Raised, not built; each waits for a real case.
+
+- *Framework 4xx exceptions.* `GlobalExceptionHandler` answers every exception
+  with 500. A client mistake Kestrel reports as a `BadHttpRequestException`
+  (body over `MaxRequestBodySize`, a body that arrives too slowly, a body shorter
+  than its `Content-Length`) carries its own `StatusCode` (413, 408, 400) but
+  would still be recorded as a server failure, and so open an incident. The
+  likely fix is to pass that status through; whether such an exception reaches
+  the handler at all has not been reproduced. Model-binding errors such as a
+  wrong DTO type are not affected: `[ApiController]` answers them with a 400
+  before the handler runs.
+
+**Note covers:** detect, respond, mitigate, communicate, fix, post-mortem — the
+usual incident order, and where this project sits in it; why alerts count and
+traces explain; metrics labels versus raw attributes, and why a label must have
+few values (environment, error type) while specifics stay on the span (store ID,
+address); acknowledge versus resolve, and why incidents here stay open; .NET
+10's handled-exception change and exceptions as log records; reading an incident
+and the five hops from it to the failing line.
+
+**Out of scope for this phase:** on-call schedules and escalation policies (paid
+plan); Better Stack's AI SRE; the rest of issue #13 — an RCA skill for two
+audiences, Claude investigating an incident and opening a fix PR, and running
+both unattended — each designed later as its own piece; automatic mitigation such
+as rollback, which needs phase 10; an alert for "no data from Production", worth
+adding once something acts on incidents automatically.
 
 ### Phase 10 — Automated deployment (CI/CD)
 

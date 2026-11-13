@@ -15,7 +15,7 @@ Applies to C#, `.csproj` (`<!-- -->`) and `.http` (`#`) files. Same purpose and 
 - A comment says what the code is trying to achieve, never what it does line by line.
 - Only comment what is not obvious.
 - When code follows a known practice, link the docs page with `<see href="..."/>` instead of explaining it. Never quote the docs.
-- Under 20 words per comment.
+- Under 20 words per comment block: every tag on one member counts together, `<see href>` links excluded.
 - Every `Add...`/`Use...` extension method gets a one-line `<summary>` stating its purpose (it is what hovering the call in `Program.cs` shows). Other members get one only when something is not obvious.
 - A hook blocks whole-line `//` comments in `.cs` edits. Trailing comments (`x(); // ...`) are not caught by the hook but are still forbidden.
 - The rules apply however a file is changed; the hook only sees Edit/Write, not shell edits.

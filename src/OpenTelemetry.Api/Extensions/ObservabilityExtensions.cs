@@ -29,7 +29,7 @@ public static class ObservabilityExtensions
         services.AddOpenTelemetry()
             .ConfigureResource(resource => DescribeService(resource, environment))
             .WithTracing(ConfigureTracing)
-            .WithLogging(ConfigureLogging);
+            .WithLogging(ConfigureLogging, IncludeRenderedMessage);
 
         SendToBetterStack(services, TracesExporterName, TracesPath);
         SendToBetterStack(services, LogsExporterName, LogsPath);
@@ -69,6 +69,15 @@ public static class ObservabilityExtensions
         activity.SetTag(HttpClientNameTag, GeocodingExtensions.ClientName);
     }
 
+    /// <summary>
+    /// Sends the filled-in message, not its template, so the log list reads clearly.
+    /// <see href="https://github.com/open-telemetry/opentelemetry-dotnet/blob/main/src/OpenTelemetry/Logs/ILogger/OpenTelemetryLoggerOptions.cs"/>
+    /// </summary>
+    private static void IncludeRenderedMessage(OpenTelemetryLoggerOptions options)
+    {
+        options.IncludeFormattedMessage = true;
+    }
+
     private static void ConfigureLogging(LoggerProviderBuilder logging)
     {
         logging.AddOtlpExporter(LogsExporterName, configureExporter: null);
@@ -85,8 +94,7 @@ public static class ObservabilityExtensions
                 (exporter, betterStack) => PointAtBetterStack(exporter, betterStack.Value, signalPath));
     }
 
-    /// <summary>The signal path is added by hand because an endpoint set in code is used as-is.</summary>
-    /// <remarks>Its own HttpClient lets the last send work while a failed startup shuts the app down.</remarks>
+    /// <summary>Code-set endpoints are used as-is, so the path is added; own HttpClient lets the last send survive shutdown.</summary>
     private static void PointAtBetterStack(OtlpExporterOptions exporter, BetterStackOptions betterStack, string signalPath)
     {
         exporter.Endpoint = new Uri($"{betterStack.Endpoint}/{signalPath}");
