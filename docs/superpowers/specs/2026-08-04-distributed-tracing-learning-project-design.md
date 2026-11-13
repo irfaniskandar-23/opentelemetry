@@ -500,19 +500,21 @@ decided here.
 - *Chart.* The existing chart "Failed requests by endpoint" on dashboard
   "Tracing" is edited, not replaced: it keeps counting server spans with
   `label('error') = '1'` (the old `root` filter is dropped: a caller's
-  `traceparent` would hide those failures), adds `label('environment') = 'Production'`, and splits
-  by `label('error_type')` instead of `span_name`. It is renamed to say what it
-  now shows.
+  `traceparent` would hide those failures), adds
+  `label('environment') = 'Production'`, and splits by error type and endpoint
+  (`error_type` plus `span_name`) instead of `span_name` alone. It also returns
+  `error_type` and `route` as extra columns, which the alert uses. It is renamed
+  to say what it now shows.
 - *Alert.* The existing alert "Request failed" is edited:
 
   | Setting | Value | Why |
   |---|---|---|
   | Rule | failed requests `> 0`, checked every 60 s, no confirmation wait | Traffic is manual; one failure is a signal |
-  | `incident_per_series` | on | One incident per error type; a burst of one type is one incident |
+  | `incident_per_series` | on | One incident per error type and endpoint; a burst of one kind is one incident. Type only would let a second bug of the same type on another endpoint join an open incident without a new email. |
   | `recovery_period` | `null` | Incidents stay open until someone resolves them, so nothing closes unseen. Decided by the owner. |
   | Notifications | email only | Push, SMS and calls need a paid plan, so the phone stays silent on the free tier |
   | `incident_name` | names the error type (`{{series_name}}`) and `Production` | The default "Tracing › Request failed" said nothing |
-  | `incident_cause` | plain-language markdown: what failed, how often, and a link to Explore traces' Errors tab | The default cause restated the rule, and nothing linked to the traces |
+  | `incident_cause` | plain-language markdown: the error type, the endpoint, the latest check's count, and a link to Explore traces filtered to that type and endpoint | The default cause restated the rule, and nothing linked to the traces |
 
   Exact wording is the builder's call. The paused alert "Error rate high" is
   left as it is.
@@ -532,8 +534,9 @@ decided here.
    refactor on its own first means a breakage can be traced to one change.
 3. From that incident, the cause's link and the time window lead to the failed
    request in Explore traces, and its stack trace names the failing line.
-4. The owner writes a post-mortem on that incident by hand — the practice run
-   for an RCA skill later.
+4. *Changed 2026-11-13:* the post-mortem is not written by the owner alone.
+   It is step 8 of the incident workflow below, drafted by Claude and edited
+   by the owner.
 
 **Known risks.**
 
@@ -558,6 +561,21 @@ decided here.
   wrong DTO type are not affected: `[ApiController]` answers them with a 400
   before the handler runs.
 
+**As built (2026-11-13).** The build departed from the design in these ways:
+
+- The code was deployed in **one release**, the startup refactor and phase 9
+  together, not in two deploys.
+- The series is **error type plus endpoint**, so incidents are per type and
+  endpoint. The cause's link filters on both, using `error_type` and `route`
+  columns that the chart returns.
+- **Email only**, because push, SMS and calls need a paid plan.
+- Claude set the per-series switch, the incident name and the cause through the
+  tools; the owner set the recovery period and renamed the alert to "Store API
+  Failure".
+- The `/boom` stack trace lost its own frame in the Release build, because the
+  method was inlined. Accepted as minor.
+- The hand-written post-mortem moved into the incident workflow below.
+
 **Note covers:** detect, respond, mitigate, communicate, fix, post-mortem — the
 usual incident order, and where this project sits in it; why alerts count and
 traces explain; metrics labels versus raw attributes, and why a label must have
@@ -572,6 +590,37 @@ audiences, Claude investigating an incident and opening a fix PR, and running
 both unattended — each designed later as its own piece; automatic mitigation such
 as rollback, which needs phase 10; an alert for "no data from Production", worth
 adding once something acts on incidents automatically.
+
+### Incident workflow — GitHub issue #13, pieces B to D
+
+*Direction agreed 2026-11-13; not yet designed in detail.* Built in this order,
+each piece by hand before it is automated: C (triage and fix PR), then B (the
+retrospective), then D (unattended pickup, which needs Claude off the laptop).
+
+| # | Step | Who | Gate |
+|---|---|---|---|
+| 1 | The alert opens an incident and emails | Better Stack | (phase 9) |
+| 2 | Claude picks up an unresolved incident and comments "investigating", so people see it and it is not taken twice | Claude | |
+| 3 | **Triage:** gather the evidence (failed requests, trace, error log, stack trace, recent deploys) and classify it: code bug, a PR; recent deploy, recommend a rollback; outside dependency or client, report only | Claude | The engineer can stop here |
+| 4 | **Fix:** open a PR linked to the incident, with the evidence. Never merge, never deploy | Claude | |
+| 5 | Review, approve, merge | Engineer | **Gate 1** |
+| 6 | Deploy, then check that new failures stopped | Engineer, then Claude | |
+| 7 | Resolve the incident | Engineer | **Gate 2** |
+| 8 | **Retrospective and RCA:** drafted from the recorded timeline, evidence and PR, then edited by the engineer, who adds what only a person knows. The non-technical version is not shared until the engineer approves | Claude, then engineer | **Gate 3** |
+
+- The retrospective comes **after the incident is resolved**, not after the PR is
+  approved: an approved PR is not yet a fix that works.
+- A timestamp is recorded at each step (detected, picked up, PR opened,
+  approved, deployed, failures stopped, resolved), so the retrospective has its
+  timeline without reconstruction.
+- Triage can end without a PR; a failure caused by an outside service has
+  nothing to fix in code.
+- Claude never merges, deploys or resolves.
+
+**Open questions:** where Claude runs unattended; a realistic bug to practise
+on, since `/boom` fails on purpose; what permissions Claude's tokens get; how an
+incident group (two similar incidents) is handled; which incidents get a full
+post-mortem and which a short RCA.
 
 ### Phase 10 — Automated deployment (CI/CD)
 
