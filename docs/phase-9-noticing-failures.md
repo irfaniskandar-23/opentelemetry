@@ -3,8 +3,8 @@
 **Question answered:** when a request fails in Production, how does a person
 find out, and how do they get from the alert to the failing code?
 
-**Status:** done on 2026-11-13, except the owner's hand-written post-mortem
-(see Verify). Two small code changes plus Better Stack configuration. The owner
+**Status:** done on 2026-11-13. The post-mortem moved into the incident
+workflow (see Verify). Two small code changes plus Better Stack configuration. The owner
 deployed the code to Azure in one release; Claude built the zip and checked the
 result with Better Stack queries. It answers the first box of GitHub issue #13.
 
@@ -137,7 +137,7 @@ paid plan, so the only channel is email.
 | 6 | Each incident's link lists only its own failed requests | ✅ `POST stores`: one row; `/boom`: only `/boom` rows |
 | 7 | The stack trace names the failing line | ✅ for `POST /stores`: `Create ... line 55`. ⚠️ Not for `/boom`, see below |
 | 8 | A 4xx opens no incident | ✅ |
-| 9 | The owner writes a post-mortem by hand | Pending |
+| 9 | A post-mortem on a real incident | Moved: now step 8 of the incident workflow in the spec, drafted by Claude and edited by the owner |
 
 The design planned two deploys, `main` alone and then phase 9. They were made as
 one release, so a breakage could not be traced to a single change. Nothing broke.
@@ -159,6 +159,8 @@ one release, so a breakage could not be traced to a single change. Nothing broke
   can be dragged to the top in the dashboard.
 - **The link depends on `http.route`.** Renaming an endpoint's route changes the
   filter, and the old incidents' links stop matching.
+- **Two incidents from the live tests stay open** (type and endpoint: `/boom`
+  and `POST /stores`) for the first run of the incident workflow.
 - **Phase 8's budget item** (US$0.0875 spent) is still open.
 
 ---

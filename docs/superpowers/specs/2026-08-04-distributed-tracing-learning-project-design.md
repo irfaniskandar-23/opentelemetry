@@ -534,8 +534,9 @@ decided here.
    refactor on its own first means a breakage can be traced to one change.
 3. From that incident, the cause's link and the time window lead to the failed
    request in Explore traces, and its stack trace names the failing line.
-4. The owner writes a post-mortem on that incident by hand — the practice run
-   for an RCA skill later.
+4. *Changed 2026-11-13:* the post-mortem is not written by the owner alone.
+   It is step 8 of the incident workflow below, drafted by Claude and edited
+   by the owner.
 
 **Known risks.**
 
@@ -573,6 +574,7 @@ decided here.
   Failure".
 - The `/boom` stack trace lost its own frame in the Release build, because the
   method was inlined. Accepted as minor.
+- The hand-written post-mortem moved into the incident workflow below.
 
 **Note covers:** detect, respond, mitigate, communicate, fix, post-mortem — the
 usual incident order, and where this project sits in it; why alerts count and
@@ -588,6 +590,37 @@ audiences, Claude investigating an incident and opening a fix PR, and running
 both unattended — each designed later as its own piece; automatic mitigation such
 as rollback, which needs phase 10; an alert for "no data from Production", worth
 adding once something acts on incidents automatically.
+
+### Incident workflow — GitHub issue #13, pieces B to D
+
+*Direction agreed 2026-11-13; not yet designed in detail.* Built in this order,
+each piece by hand before it is automated: C (triage and fix PR), then B (the
+retrospective), then D (unattended pickup, which needs Claude off the laptop).
+
+| # | Step | Who | Gate |
+|---|---|---|---|
+| 1 | The alert opens an incident and emails | Better Stack | (phase 9) |
+| 2 | Claude picks up an unresolved incident and comments "investigating", so people see it and it is not taken twice | Claude | |
+| 3 | **Triage:** gather the evidence (failed requests, trace, error log, stack trace, recent deploys) and classify it: code bug, a PR; recent deploy, recommend a rollback; outside dependency or client, report only | Claude | The engineer can stop here |
+| 4 | **Fix:** open a PR linked to the incident, with the evidence. Never merge, never deploy | Claude | |
+| 5 | Review, approve, merge | Engineer | **Gate 1** |
+| 6 | Deploy, then check that new failures stopped | Engineer, then Claude | |
+| 7 | Resolve the incident | Engineer | **Gate 2** |
+| 8 | **Retrospective and RCA:** drafted from the recorded timeline, evidence and PR, then edited by the engineer, who adds what only a person knows. The non-technical version is not shared until the engineer approves | Claude, then engineer | **Gate 3** |
+
+- The retrospective comes **after the incident is resolved**, not after the PR is
+  approved: an approved PR is not yet a fix that works.
+- A timestamp is recorded at each step (detected, picked up, PR opened,
+  approved, deployed, failures stopped, resolved), so the retrospective has its
+  timeline without reconstruction.
+- Triage can end without a PR; a failure caused by an outside service has
+  nothing to fix in code.
+- Claude never merges, deploys or resolves.
+
+**Open questions:** where Claude runs unattended; a realistic bug to practise
+on, since `/boom` fails on purpose; what permissions Claude's tokens get; how an
+incident group (two similar incidents) is handled; which incidents get a full
+post-mortem and which a short RCA.
 
 ### Phase 10 — Automated deployment (CI/CD)
 

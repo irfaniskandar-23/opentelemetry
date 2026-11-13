@@ -77,9 +77,11 @@ the request with the kind of error and writes one error log, linked to the trace
 Better Stack's free plan can only email; push needs a paid plan.
 
 **Next:** phase 10, automated deployment, so merging to `main` deploys to Azure
-without a manual upload. Separately, the rest of GitHub issue #13: a written
-root-cause report for engineers and for non-technical readers, and later Claude
-investigating an incident itself.
+without a manual upload. Separately, the rest of GitHub issue #13, built by hand
+first: Claude picks up an open incident, investigates and opens a fix PR for
+review; once the incident is resolved, Claude and the owner write the
+retrospective and a plain-language root-cause report together. The agreed
+workflow is in the spec.
 
 The technical detail of each phase is in its note under `docs/`. Update this
 section in every phase's PR. Keep it short and in plain language.
