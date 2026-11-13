@@ -31,10 +31,12 @@ That spec is the source of truth. Read it before proposing work.
 | `traceparent` | A standard HTTP header that carries a trace's ID from one service to the next |
 | OpenTelemetry | The open standard and SDK that collect traces and send them on |
 | Better Stack | The monitoring tool that receives and displays the traces |
+| Alert | A rule in Better Stack that watches a chart and fires when a number crosses a limit |
+| Incident | What an alert opens when it fires; it stays open until a person resolves it |
 
 ## Where we are now
 
-**Phases 1 to 8 are done.** A small store API records a trace for every
+**Phases 1 to 9 are done.** A small store API records a trace for every
 request. Each trace shows which store it involved, what went wrong if anything
 failed, and the call made to an outside service (Nominatim, which turns an
 address into map coordinates). Every trace is sent to Better Stack. Every
@@ -68,10 +70,16 @@ no longer go to Better Stack. If the app fails to start, for example because a
 setting is missing, it prints one line naming the cause instead of a stack
 trace, and that line reaches Better Stack as a Critical log.
 
-**Next:** phase 9, noticing failures. Better Stack should tell us when requests
-fail and summarise what went wrong, using the data the app already sends. The
-first agreed change: the error handler labels each failed request span with
-`error.type`. Design in progress.
+When a request fails in Production, Better Stack now opens one incident for that
+kind of failure on that endpoint, emails the owner, and links to exactly those
+failed requests. A failure on a laptop opens nothing. The error handler marks
+the request with the kind of error and writes one error log, linked to the trace.
+Better Stack's free plan can only email; push needs a paid plan.
+
+**Next:** phase 10, automated deployment, so merging to `main` deploys to Azure
+without a manual upload. Separately, the rest of GitHub issue #13: a written
+root-cause report for engineers and for non-technical readers, and later Claude
+investigating an incident itself.
 
 The technical detail of each phase is in its note under `docs/`. Update this
 section in every phase's PR. Keep it short and in plain language.
@@ -88,7 +96,7 @@ section in every phase's PR. Keep it short and in plain language.
 | 6 | The network hop | Automatic client spans and `traceparent` injection | Done |
 | 7 | Logs and trace correlation | Generic messages, structured properties | Done |
 | 8 | Deploy to Azure App Service | Plan and app, app settings, free tier limits | Done |
-| 9 | Noticing failures | `error.type`, Better Stack alerts and incidents | In design |
+| 9 | Noticing failures | `error.type`, Better Stack alerts and incidents | Done |
 | 10 | Automated deployment (CI/CD) | GitHub Actions deploying on merge | Planned |
 
 **Later, not yet designed:** a real database (SQL Server). It will be its own

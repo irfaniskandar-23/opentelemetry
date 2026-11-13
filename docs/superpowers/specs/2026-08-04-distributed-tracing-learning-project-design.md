@@ -500,19 +500,21 @@ decided here.
 - *Chart.* The existing chart "Failed requests by endpoint" on dashboard
   "Tracing" is edited, not replaced: it keeps counting server spans with
   `label('error') = '1'` (the old `root` filter is dropped: a caller's
-  `traceparent` would hide those failures), adds `label('environment') = 'Production'`, and splits
-  by `label('error_type')` instead of `span_name`. It is renamed to say what it
-  now shows.
+  `traceparent` would hide those failures), adds
+  `label('environment') = 'Production'`, and splits by error type and endpoint
+  (`error_type` plus `span_name`) instead of `span_name` alone. It also returns
+  `error_type` and `route` as extra columns, which the alert uses. It is renamed
+  to say what it now shows.
 - *Alert.* The existing alert "Request failed" is edited:
 
   | Setting | Value | Why |
   |---|---|---|
   | Rule | failed requests `> 0`, checked every 60 s, no confirmation wait | Traffic is manual; one failure is a signal |
-  | `incident_per_series` | on | One incident per error type; a burst of one type is one incident |
+  | `incident_per_series` | on | One incident per error type and endpoint; a burst of one kind is one incident. Type only would let a second bug of the same type on another endpoint join an open incident without a new email. |
   | `recovery_period` | `null` | Incidents stay open until someone resolves them, so nothing closes unseen. Decided by the owner. |
   | Notifications | email only | Push, SMS and calls need a paid plan, so the phone stays silent on the free tier |
   | `incident_name` | names the error type (`{{series_name}}`) and `Production` | The default "Tracing › Request failed" said nothing |
-  | `incident_cause` | plain-language markdown: what failed, how often, and a link to Explore traces' Errors tab | The default cause restated the rule, and nothing linked to the traces |
+  | `incident_cause` | plain-language markdown: the error type, the endpoint, the latest check's count, and a link to Explore traces filtered to that type and endpoint | The default cause restated the rule, and nothing linked to the traces |
 
   Exact wording is the builder's call. The paused alert "Error rate high" is
   left as it is.
@@ -557,6 +559,20 @@ decided here.
   the handler at all has not been reproduced. Model-binding errors such as a
   wrong DTO type are not affected: `[ApiController]` answers them with a 400
   before the handler runs.
+
+**As built (2026-11-13).** The build departed from the design in these ways:
+
+- The code was deployed in **one release**, the startup refactor and phase 9
+  together, not in two deploys.
+- The series is **error type plus endpoint**, so incidents are per type and
+  endpoint. The cause's link filters on both, using `error_type` and `route`
+  columns that the chart returns.
+- **Email only**, because push, SMS and calls need a paid plan.
+- Claude set the per-series switch, the incident name and the cause through the
+  tools; the owner set the recovery period and renamed the alert to "Store API
+  Failure".
+- The `/boom` stack trace lost its own frame in the Release build, because the
+  method was inlined. Accepted as minor.
 
 **Note covers:** detect, respond, mitigate, communicate, fix, post-mortem — the
 usual incident order, and where this project sits in it; why alerts count and
