@@ -23,7 +23,7 @@ internal sealed class GlobalExceptionHandler(
         var activity = Activity.Current;
 
         MarkSpanFailed(activity, exception);
-        logger.LogError(exception, "Request failed");
+        logger.LogError(exception, "Request failed: {ExceptionType}", exception.GetType().Name);
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
         StampTraceParent(httpContext, activity);

@@ -29,7 +29,7 @@ public static class ObservabilityExtensions
         services.AddOpenTelemetry()
             .ConfigureResource(resource => DescribeService(resource, environment))
             .WithTracing(ConfigureTracing)
-            .WithLogging(ConfigureLogging);
+            .WithLogging(ConfigureLogging, IncludeRenderedMessage);
 
         SendToBetterStack(services, TracesExporterName, TracesPath);
         SendToBetterStack(services, LogsExporterName, LogsPath);
@@ -67,6 +67,15 @@ public static class ObservabilityExtensions
     private static void TagClientName(Activity activity, HttpRequestMessage _)
     {
         activity.SetTag(HttpClientNameTag, GeocodingExtensions.ClientName);
+    }
+
+    /// <summary>
+    /// Sends the filled-in message, not its template, so the log list reads clearly.
+    /// <see href="https://github.com/open-telemetry/opentelemetry-dotnet/blob/main/src/OpenTelemetry/Logs/ILogger/OpenTelemetryLoggerOptions.cs"/>
+    /// </summary>
+    private static void IncludeRenderedMessage(OpenTelemetryLoggerOptions options)
+    {
+        options.IncludeFormattedMessage = true;
     }
 
     private static void ConfigureLogging(LoggerProviderBuilder logging)
