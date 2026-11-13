@@ -477,8 +477,9 @@ paid plan, so incidents escalate to the entire team, which is the owner.
    would have merged two unrelated problems. Compiler warning CS8602 on that
    line is expected and stays.
 
-**What counts as a failure.** A root server span with status `error` whose
-resource has `deployment.environment.name = Production`. Laptop failures never
+**What counts as a failure.** A server span with status `error` (one per
+request, so each failure counts once, even when a caller's `traceparent` makes
+it a child span) whose resource has `deployment.environment.name = Production`. Laptop failures never
 open an incident. `/boom` is the test failure. Whether "no coordinates for this
 address" is a server failure or the caller's mistake (a 4xx) is parked, not
 decided here.
@@ -497,8 +498,9 @@ decided here.
   | `error_type` | `JSONExtract(raw, 'span', 'attributes', 'error.type', 'Nullable(String)')` |
 
 - *Chart.* The existing chart "Failed requests by endpoint" on dashboard
-  "Tracing" is edited, not replaced: it keeps counting root server spans with
-  `label('error') = '1'`, adds `label('environment') = 'Production'`, and splits
+  "Tracing" is edited, not replaced: it keeps counting server spans with
+  `label('error') = '1'` (the old `root` filter is dropped: a caller's
+  `traceparent` would hide those failures), adds `label('environment') = 'Production'`, and splits
   by `label('error_type')` instead of `span_name`. It is renamed to say what it
   now shows.
 - *Alert.* The existing alert "Request failed" is edited:
