@@ -440,7 +440,7 @@ line of code that failed?
 **Dependencies added:** none.
 
 **The chain.** Failed request span → chart of failed `Production` requests →
-alert on that chart → incident → email and push. Better Stack's alert reads
+alert on that chart → incident → email. Better Stack's alert reads
 pre-aggregated *metrics* (counts by label), never the raw spans, so the
 incident knows *how many* and *which kind*, not *why*. The why stays on the
 trace, which is reached by hand from the incident (see **Verify**). That split —
@@ -510,7 +510,7 @@ decided here.
   | Rule | failed requests `> 0`, checked every 60 s, no confirmation wait | Traffic is manual; one failure is a signal |
   | `incident_per_series` | on | One incident per error type; a burst of one type is one incident |
   | `recovery_period` | `null` | Incidents stay open until someone resolves them, so nothing closes unseen. Decided by the owner. |
-  | Notifications | email and push | Push was off, which is why the phone stayed silent |
+  | Notifications | email only | Push, SMS and calls need a paid plan, so the phone stays silent on the free tier |
   | `incident_name` | names the error type (`{{series_name}}`) and `Production` | The default "Tracing › Request failed" said nothing |
   | `incident_cause` | plain-language markdown: what failed, how often, and a link to Explore traces' Errors tab | The default cause restated the rule, and nothing linked to the traces |
 
@@ -527,7 +527,7 @@ decided here.
    has not been deployed yet: `GET /stores` on the live URL answers and its
    trace reaches Better Stack as `Production`. Then the phase 9 branch: one
    `/boom` on the live URL opens exactly one incident, named with the error
-   type, by email and push. A second `/boom` while it is open joins it rather
+   type, by email. A second `/boom` while it is open joins it rather
    than opening another. It stays open until resolved by hand. Deploying the
    refactor on its own first means a breakage can be traced to one change.
 3. From that incident, the cause's link and the time window lead to the failed
