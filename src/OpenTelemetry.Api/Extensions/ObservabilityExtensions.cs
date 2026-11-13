@@ -94,8 +94,7 @@ public static class ObservabilityExtensions
                 (exporter, betterStack) => PointAtBetterStack(exporter, betterStack.Value, signalPath));
     }
 
-    /// <summary>The signal path is added by hand because an endpoint set in code is used as-is.</summary>
-    /// <remarks>Its own HttpClient lets the last send work while a failed startup shuts the app down.</remarks>
+    /// <summary>Code-set endpoints are used as-is, so the path is added; own HttpClient lets the last send survive shutdown.</summary>
     private static void PointAtBetterStack(OtlpExporterOptions exporter, BetterStackOptions betterStack, string signalPath)
     {
         exporter.Endpoint = new Uri($"{betterStack.Endpoint}/{signalPath}");

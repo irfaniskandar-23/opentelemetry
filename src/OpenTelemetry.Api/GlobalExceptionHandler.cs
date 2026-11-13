@@ -13,11 +13,10 @@ internal sealed class GlobalExceptionHandler(
     private const string ErrorTypeTag = "error.type";
 
     /// <remarks>
-    /// Logs here because .NET 10 skips its own log once a handler returns true.
+    /// Returns true so the middleware stays silent (.NET 10), which is why this logs; false would log twice.
     /// <see href="https://learn.microsoft.com/aspnet/core/breaking-changes/10/exception-handler-diagnostics-suppressed?view=aspnetcore-10.0"/>
     /// <see href="https://opentelemetry.io/docs/specs/semconv/exceptions/exceptions-logs/"/>
     /// </remarks>
-    /// <returns>Always true, even without a body: false makes the middleware log the exception again.</returns>
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         if (Activity.Current is { } activity)
