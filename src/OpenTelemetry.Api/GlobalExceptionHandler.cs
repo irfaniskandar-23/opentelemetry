@@ -20,13 +20,15 @@ internal sealed class GlobalExceptionHandler(
     /// <returns>Always true, even without a body: false makes the middleware log the exception again.</returns>
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        var activity = Activity.Current;
+        if (Activity.Current is { } activity)
+        {
+            MarkSpanFailed(activity, exception);
+            StampTraceParent(httpContext, activity);
+        }
 
-        MarkSpanFailed(activity, exception);
         logger.LogError(exception, "Request failed: {ExceptionType}", exception.GetType().Name);
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        StampTraceParent(httpContext, activity);
 
         await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
@@ -46,18 +48,15 @@ internal sealed class GlobalExceptionHandler(
     /// Set here because the ASP.NET Core instrumentation never sees exceptions this handler catches.
     /// <see href="https://opentelemetry.io/docs/specs/semconv/http/http-spans/"/>
     /// </summary>
-    private static void MarkSpanFailed(Activity? activity, Exception exception)
+    private static void MarkSpanFailed(Activity activity, Exception exception)
     {
-        activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity?.SetTag(ErrorTypeTag, exception.GetType().FullName);
+        activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+        activity.SetTag(ErrorTypeTag, exception.GetType().FullName);
     }
 
     /// <summary>The traceparent header is written again because UseExceptionHandler cleared the response.</summary>
-    private static void StampTraceParent(HttpContext httpContext, Activity? activity)
+    private static void StampTraceParent(HttpContext httpContext, Activity activity)
     {
-        if (activity is not null)
-        {
-            httpContext.Response.Headers.TraceParent = activity.Id;
-        }
+        httpContext.Response.Headers.TraceParent = activity.Id;
     }
 }
