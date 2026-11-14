@@ -1,0 +1,26 @@
+name: Investigate incidents
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Find an unclaimed incident
+        id: find
+        shell: pwsh
+        env:
+          BETTERSTACK_API_TOKEN: ${{ secrets.BETTERSTACK_API_TOKEN }}
+        run: |
+          $incidentId = ./.github/scripts/Find-UnclaimedIncident.ps1
+          "incident_id=$incidentId" >> $env:GITHUB_OUTPUT
+          if ($incidentId) { "Unclaimed incident: $incidentId" } else { 'Nothing to investigate.' }
