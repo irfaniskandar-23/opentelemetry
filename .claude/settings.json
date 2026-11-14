@@ -33,5 +33,14 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "betterstack": {
+      "source": { "source": "github", "repo": "BetterStackHQ/claude-plugin" },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": {
+    "betterstack@betterstack": true
   }
 }
