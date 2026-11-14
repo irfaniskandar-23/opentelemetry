@@ -63,6 +63,15 @@ Content-Type: application/json
   "address": "qwertyuiop asdfghjkl zxcvbnm 12345"
 }
 
+### An address with no comma. Returns 201; CreateStore has no store.city tag.
+POST {{OpenTelemetry.Api_HostAddress}}/stores
+Content-Type: application/json
+
+{
+  "name": "KK Mart Ampang",
+  "address": "Jalan Ampang Kuala Lumpur"
+}
+
 ### Missing fields. Returns 400 before any span work, so no failed span appears.
 POST {{OpenTelemetry.Api_HostAddress}}/stores
 Content-Type: application/json

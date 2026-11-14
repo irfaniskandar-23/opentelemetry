@@ -38,8 +38,7 @@ public sealed class StoresController(
 
         try
         {
-            var city = request.Address.Split(',')[1].Trim();
-            activity?.SetTag(StoreCityTag, city);
+            activity?.SetTag(StoreCityTag, FindCity(request.Address));
 
             var geocodingClient = httpClientFactory.CreateClient(GeocodingExtensions.ClientName);
 
@@ -87,6 +86,22 @@ public sealed class StoresController(
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// The city is the address's second comma-separated part; null without a comma, so no tag is set.
+    /// <see href="https://learn.microsoft.com/dotnet/api/system.diagnostics.activity.settag"/>
+    /// </summary>
+    private static string? FindCity(string address)
+    {
+        var addressParts = address.Split(',');
+
+        if (addressParts.Length < 2)
+        {
+            return null;
+        }
+
+        return addressParts[1].Trim();
     }
 
     [HttpGet("{id:guid}")]
