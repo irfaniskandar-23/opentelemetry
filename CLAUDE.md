@@ -169,6 +169,12 @@ most here:
 
 - Feature branch per phase: `feature/phase-N-<topic>`. Never commit or push
   directly to `main`, which is protected by a ruleset.
+- Changes to Claude Code's own setup (`.claude/settings.json`, `.claude/hooks/`,
+  plugins, MCP servers) always go on the branch `docs/claude-config`. Start it
+  from a fresh `main` each time, or merge `main` into it if it still exists.
+  Rule files changed together with code stay on that code's branch.
+- The project turns on the Better Stack plugin in `.claude/settings.json`; the
+  README has the one-time install step.
 - Conventional Commits.
 - `dotnet build` must pass before any push.
 - Merge commits only, never rebase.
