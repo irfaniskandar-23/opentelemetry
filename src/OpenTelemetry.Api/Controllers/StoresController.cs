@@ -16,6 +16,7 @@ public sealed class StoresController(
     private const string StoreIdTag = "store.id";
     private const string StoreNameTag = "store.name";
     private const string StoreAddressTag = "store.address";
+    private const string StoreCityTag = "store.city";
     private const string GeocodeMatchCountTag = "geocode.match_count";
     private const string GeocodeLatitudeTag = "geocode.latitude";
     private const string GeocodeLongitudeTag = "geocode.longitude";
@@ -37,6 +38,9 @@ public sealed class StoresController(
 
         try
         {
+            var city = request.Address.Split(',')[1].Trim();
+            activity?.SetTag(StoreCityTag, city);
+
             var geocodingClient = httpClientFactory.CreateClient(GeocodingExtensions.ClientName);
 
             var response = await geocodingClient.GetAsync(
