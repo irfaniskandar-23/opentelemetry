@@ -2,7 +2,7 @@ name: Investigate incidents
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '3/5 * * * *'
   workflow_dispatch:
 
 permissions:
